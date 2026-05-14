@@ -71,8 +71,14 @@
             </div>
             <div class="header-actions">
               <button id="openSourceModalBtn" class="primary-button"><i data-lucide="plus"></i>Добавить источник</button>
-              <button id="refreshMaterialsBtn" class="secondary-button">Обновить</button>
-              <button id="reindexBtn" class="warning-button"><i data-lucide="triangle-alert"></i>Переиндексировать</button>
+              <button id="refreshMaterialsBtn" class="secondary-button refresh-button" type="button">
+                <i data-lucide="refresh-cw"></i>
+                <span>Обновить</span>
+              </button>
+              <button id="reindexBtn" class="warning-button reindex-button" type="button">
+                <i data-lucide="triangle-alert"></i>
+                <span>Переиндексировать</span>
+              </button>
             </div>
           </header>
 
@@ -164,12 +170,12 @@
           <label>
             Тип
             <select id="sourceType">
-              <option value="web">web</option>
-              <option value="pdf_or_web">pdf_or_web</option>
-              <option value="official_manual">official_manual</option>
-              <option value="official_help">official_help</option>
-              <option value="article_pdf">article_pdf</option>
-              <option value="book_metadata">book_metadata</option>
+              <option value="Web-сайт с информацией">Web-сайт с информацией</option>
+              <option value="Пользовательская Инструкция">Пользовательская Инструкция</option>
+              <option value="Статья">Статья</option>
+              <option value="Книга">Книга</option>
+              <option value="Учебные материалы">Учебные материалы</option>
+              <option value="Курс">Курс</option>
             </select>
           </label>
           <div class="source-info">
@@ -178,6 +184,45 @@
           <div class="modal-actions">
             <button class="secondary-button" type="button" id="cancelSourceModalBtn">Отмена</button>
             <button class="primary-button" type="submit">Добавить</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div id="editSourceModal" class="modal-backdrop" aria-hidden="true">
+      <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="editSourceModalTitle">
+        <div class="modal-head">
+          <h2 id="editSourceModalTitle">Редактировать источник</h2>
+          <button id="closeEditSourceModalBtn" class="modal-close" type="button" aria-label="Закрыть"><i data-lucide="x"></i></button>
+        </div>
+        <form id="editSourceForm" class="modal-form">
+          <input id="editSourceId" type="hidden" />
+          <input id="editSourceOrigin" type="hidden" />
+          <label>
+            Название источника
+            <input id="editSourceTitle" type="text" required />
+          </label>
+          <label>
+            Ссылка или путь к файлу
+            <input id="editSourceUrl" type="text" required />
+          </label>
+          <label>
+            Тип
+            <select id="editSourceType" required>
+              <option value="Пользовательская Инструкция">Пользовательская Инструкция</option>
+              <option value="Web-сайт с информацией">Web-сайт с информацией</option>
+              <option value="Статья">Статья</option>
+              <option value="Книга">Книга</option>
+              <option value="Учебные материалы">Учебные материалы</option>
+              <option value="Курс">Курс</option>
+            </select>
+          </label>
+          <div class="source-info">
+            Для manual-файлов редактируются название и тип. Путь к файлу остается привязан к файлу в папке data/manual. После изменения полей нажмите «Переиндексировать», чтобы обновить поиск.
+          </div>
+          <div class="modal-actions">
+            <button class="secondary-button" type="button" id="cancelEditSourceModalBtn">Отмена</button>
+            <button class="primary-button" type="submit">Сохранить</button>
           </div>
         </form>
       </div>

@@ -6,6 +6,7 @@ import re
 from urllib.parse import urlparse
 
 from app.config import ROOT_DIR, Settings
+from app.services.categories import DEFAULT_SOURCE_CATEGORY, SOURCE_CATEGORIES
 from app.services.db import Database, utc_now
 
 
@@ -14,6 +15,7 @@ class SourceStore:
         self.db = db
         self.settings = settings
         self.sources_file = settings.data_dir / "sources.json"
+        self.manual_metadata_file = settings.data_dir / "manual_metadata.json"
 
     def configured_sources(self) -> list[dict]:
         if self.sources_file.exists():
@@ -31,11 +33,24 @@ class SourceStore:
             encoding="utf-8",
         )
 
+    def manual_metadata(self) -> dict:
+        if not self.manual_metadata_file.exists():
+            return {}
+        return json.loads(self.manual_metadata_file.read_text(encoding="utf-8"))
+
+    def save_manual_metadata(self, metadata: dict) -> None:
+        self.manual_metadata_file.parent.mkdir(parents=True, exist_ok=True)
+        self.manual_metadata_file.write_text(
+            json.dumps(metadata, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+
     def make_source_id(self, title: str, url: str) -> str:
         base = re.sub(r"[^a-z0-9]+", "-", f"{title}-{urlparse(url).netloc}".lower()).strip("-")
         return base[:72] or "custom-source"
 
     def add_web_source(self, title: str, url: str, source_type: str = "web") -> dict:
+        source_type = self.normalize_category(source_type)
         parsed = urlparse(url)
         if parsed.scheme not in {"http", "https"} or not parsed.netloc:
             raise ValueError("Нужна корректная ссылка http или https.")
@@ -63,14 +78,17 @@ class SourceStore:
 
     def manual_sources(self) -> list[dict]:
         items = []
+        metadata = self.manual_metadata()
         for path in sorted(self.settings.manual_dir.glob("*")):
             if path.is_file() and path.suffix.lower() in {".md", ".txt", ".pdf"}:
+                source_id = f"manual-{path.stem.lower().replace(' ', '-')}"
+                overrides = metadata.get(source_id, {})
                 items.append(
                     {
-                        "id": f"manual-{path.stem.lower().replace(' ', '-')}",
-                        "title": path.stem,
+                        "id": source_id,
+                        "title": overrides.get("title") or path.stem,
                         "url": str(path.relative_to(ROOT_DIR)),
-                        "type": f"manual{path.suffix.lower()}",
+                        "type": self.normalize_category(overrides.get("type") or "Пользовательская Инструкция"),
                         "path": str(path),
                         "origin": "manual",
                     }
@@ -180,6 +198,80 @@ class SourceStore:
             conn.execute("DELETE FROM source_chunks WHERE source_id = ?", (source_id,))
             conn.execute("DELETE FROM sources WHERE id = ?", (source_id,))
         return True
+
+    def update_source(self, source_id: str, title: str, source_type: str, url: str | None = None) -> dict:
+        self.sync_metadata()
+        title = title.strip()
+        source_type = self.normalize_category(source_type)
+        if not title:
+            raise ValueError("Название источника не может быть пустым.")
+        if not source_type:
+            raise ValueError("Тип источника не может быть пустым.")
+
+        with self.db.connect() as conn:
+            row = conn.execute(
+                "SELECT id, origin, url FROM sources WHERE id = ?",
+                (source_id,),
+            ).fetchone()
+            if not row:
+                raise ValueError("Источник не найден.")
+
+        if row["origin"] == "manual":
+            metadata = self.manual_metadata()
+            metadata[source_id] = {"title": title, "type": source_type}
+            self.save_manual_metadata(metadata)
+            self.sync_metadata()
+            with self.db.connect() as conn:
+                conn.execute(
+                    "UPDATE source_chunks SET title = ?, updated_at = ? WHERE source_id = ?",
+                    (title, utc_now(), source_id),
+                )
+            return {"id": source_id, "title": title, "type": source_type, "url": row["url"], "origin": "manual"}
+
+        next_url = (url or "").strip()
+        parsed = urlparse(next_url)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError("Нужна корректная ссылка http или https.")
+        sources = self.configured_sources()
+        for item in sources:
+            if item["id"] == source_id:
+                item["title"] = title
+                item["url"] = next_url
+                item["type"] = source_type
+                break
+        else:
+            raise ValueError("Источник не найден.")
+        self.save_configured_sources(sources)
+        self.sync_metadata()
+        with self.db.connect() as conn:
+            conn.execute(
+                "UPDATE source_chunks SET title = ?, url = ?, updated_at = ? WHERE source_id = ?",
+                (title, next_url, utc_now(), source_id),
+            )
+        return {"id": source_id, "title": title, "type": source_type, "url": next_url, "origin": "web"}
+
+    def normalize_category(self, source_type: str) -> str:
+        source_type = (source_type or "").strip()
+        legacy_map = {
+            "web": "Web-сайт с информацией",
+            "pdf_or_web": "Статья",
+            "doi": "Статья",
+            "article_pdf": "Статья",
+            "book_pdf": "Книга",
+            "book_metadata": "Книга",
+            "official_manual": "Пользовательская Инструкция",
+            "manual.pdf": "Пользовательская Инструкция",
+            "manual.txt": "Пользовательская Инструкция",
+            "manual.md": "Пользовательская Инструкция",
+            "manualpdf": "Пользовательская Инструкция",
+            "official_help": "Пользовательская Инструкция",
+            "official_learning": "Курс",
+            "open_course": "Курс",
+            "education_program": "Учебные материалы",
+            "herzen_profile": "Web-сайт с информацией",
+        }
+        normalized = legacy_map.get(source_type, source_type)
+        return normalized if normalized in SOURCE_CATEGORIES else DEFAULT_SOURCE_CATEGORY
 
     def update_status(
         self,

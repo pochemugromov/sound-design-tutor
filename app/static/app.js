@@ -12,6 +12,15 @@ const materialsListEl = $("#materialsList");
 const toolsListEl = $("#toolsList");
 const coursesListEl = $("#coursesList");
 
+const sourceCategories = [
+  "Пользовательская Инструкция",
+  "Web-сайт с информацией",
+  "Статья",
+  "Книга",
+  "Учебные материалы",
+  "Курс",
+];
+
 const chatPlaceholders = [
   "Опиши, что не получается со звуком: глухо, резко, не играет MIDI или потерялся эффект",
   "Спроси, где в Ableton Live искать Browser, Mixer, Sends, Automation и Detail View",
@@ -95,6 +104,7 @@ function setActiveTab(tabName) {
   document.querySelectorAll(".tab").forEach((item) => item.classList.toggle("active", item.dataset.tab === tabName));
   document.querySelectorAll(".panel").forEach((item) => item.classList.remove("active-panel"));
   $(`#${tabName}Tab`).classList.add("active-panel");
+  localStorage.setItem("activeTab", tabName);
 }
 
 function startDraftChat() {
@@ -131,7 +141,7 @@ function renderMessage(role, content, citations = []) {
     citationsEl.innerHTML = citations
       .map(
         (citation) =>
-          `<a href="${escapeHtml(citation.url)}" target="_blank" rel="noreferrer">${escapeHtml(citation.title)} · chunk ${citation.chunk_index}</a>`,
+          `<a href="${escapeHtml(citation.url)}" target="_blank" rel="noreferrer">${escapeHtml(citation.title)}</a>`,
       )
       .join("");
     item.appendChild(citationsEl);
@@ -224,6 +234,12 @@ function resizeComposer(textarea) {
   textarea.style.overflowY = textarea.scrollHeight > maxHeight ? "auto" : "hidden";
 }
 
+function handleComposerKeydown(event) {
+  if (event.key !== "Enter" || event.shiftKey || event.isComposing) return;
+  event.preventDefault();
+  event.currentTarget.form.requestSubmit();
+}
+
 function rotateChatPlaceholder() {
   const input = $("#messageInput");
   let index = 0;
@@ -294,23 +310,92 @@ function fillSelectOptions(select, values, current) {
 
 async function loadMaterials() {
   state.materials = await api("/api/materials");
-  fillSelectOptions($("#statusFilter"), uniqueValues("status"), $("#statusFilter").value);
-  fillSelectOptions($("#typeFilter"), uniqueValues("type"), $("#typeFilter").value);
+  syncMaterialFilterOptions();
   renderMaterials();
 }
 
-function renderMaterials() {
+async function refreshMaterials() {
+  const button = $("#refreshMaterialsBtn");
+  button.disabled = true;
+  button.classList.add("loading");
+  $("#reindexStatus").textContent = "Обновляю список источников...";
+  try {
+    await loadMaterials();
+    materialsListEl.classList.remove("just-refreshed");
+    void materialsListEl.offsetWidth;
+    materialsListEl.classList.add("just-refreshed");
+    $("#reindexStatus").textContent = `Список обновлен: ${state.materials.length} источников.`;
+  } finally {
+    button.disabled = false;
+    button.classList.remove("loading");
+    refreshIcons();
+  }
+}
+
+function syncMaterialFilterOptions() {
+  fillSelectOptions($("#statusFilter"), uniqueValues("status"), $("#statusFilter").value);
+  fillSelectOptions($("#typeFilter"), sourceCategories, $("#typeFilter").value);
+}
+
+function matchesMaterialFilters(material) {
   const query = $("#materialSearch").value.trim().toLowerCase();
   const status = $("#statusFilter").value;
   const origin = $("#originFilter").value;
   const type = $("#typeFilter").value;
+  const haystack = `${material.title} ${material.url} ${material.type} ${material.status}`.toLowerCase();
+  return (!query || haystack.includes(query)) && (!status || material.status === status) && (!origin || material.origin === origin) && (!type || material.type === type);
+}
+
+function createMaterialCard(material) {
+  const item = document.createElement("article");
+  item.className = "material-item";
+  item.dataset.sourceId = material.id;
+  const originIcon = material.origin === "manual" ? "book-open" : "globe";
+  const originLabel = material.origin === "manual" ? "Manual" : "Web";
+  const sourceLink =
+    material.origin === "manual"
+      ? ""
+      : `<a class="material-link" href="${escapeHtml(material.url)}" target="_blank" rel="noreferrer">
+          <i data-lucide="external-link"></i>
+          Открыть источник
+        </a>`;
+  item.innerHTML = `
+    <div class="material-card-head">
+      <div>
+        <div class="material-title">${escapeHtml(material.title)}</div>
+        <div class="material-meta">
+          <span class="status-${material.status}">${escapeHtml(material.status)}</span>
+          <span class="origin-badge"><i data-lucide="${originIcon}"></i>${originLabel}</span>
+          <span>${escapeHtml(material.type)}</span>
+          <span>chunks: ${material.chunks_count}</span>
+        </div>
+      </div>
+      <div class="material-actions">
+        <button class="edit-material" title="Редактировать источник" aria-label="Редактировать источник"><i data-lucide="pencil"></i></button>
+        <button class="delete-material" title="Удалить источник" aria-label="Удалить источник">×</button>
+      </div>
+    </div>
+    <div class="material-note">${escapeHtml(material.note || "Описание пока не добавлено.")}</div>
+    ${sourceLink}
+  `;
+  item.querySelector(".edit-material").addEventListener("click", () => openEditSourceModal(material));
+  item.querySelector(".delete-material").addEventListener("click", () => deleteMaterial(material));
+  return item;
+}
+
+function flashMaterialCard(sourceId, className) {
+  const card = materialsListEl.querySelector(`[data-source-id="${CSS.escape(sourceId)}"]`);
+  if (!card) return;
+  card.classList.remove(className);
+  void card.offsetWidth;
+  card.classList.add(className);
+}
+
+function renderMaterials() {
   const sort = $("#sortMaterials").value;
 
   const statusOrder = { indexed: 1, prepared: 2, pending: 3, metadata_only: 4, unavailable: 5 };
-  let items = state.materials.filter((item) => {
-    const haystack = `${item.title} ${item.url} ${item.type} ${item.status}`.toLowerCase();
-    return (!query || haystack.includes(query)) && (!status || item.status === status) && (!origin || item.origin === origin) && (!type || item.type === type);
-  });
+  let items = state.materials.filter(matchesMaterialFilters);
 
   items.sort((a, b) => {
     if (sort === "status") return (statusOrder[a.status] || 99) - (statusOrder[b.status] || 99) || a.title.localeCompare(b.title);
@@ -321,26 +406,7 @@ function renderMaterials() {
 
   materialsListEl.innerHTML = "";
   items.forEach((material) => {
-    const item = document.createElement("article");
-    item.className = "material-item";
-    item.innerHTML = `
-      <div class="material-card-head">
-        <div>
-          <div class="material-title">${escapeHtml(material.title)}</div>
-          <div class="material-meta">
-            <span class="status-${material.status}">${escapeHtml(material.status)}</span>
-            <span>· ${escapeHtml(material.origin)}</span>
-            <span>· ${escapeHtml(material.type)}</span>
-            <span>· chunks: ${material.chunks_count}</span>
-          </div>
-        </div>
-        <button class="delete-material" title="Удалить источник" aria-label="Удалить источник">×</button>
-      </div>
-      <div class="material-note">${escapeHtml(material.note || "")}</div>
-      <a class="material-link" href="${escapeHtml(material.url)}" target="_blank" rel="noreferrer">${escapeHtml(material.url)}</a>
-    `;
-    item.querySelector(".delete-material").addEventListener("click", () => deleteMaterial(material));
-    materialsListEl.appendChild(item);
+    materialsListEl.appendChild(createMaterialCard(material));
   });
   refreshIcons();
 }
@@ -352,11 +418,26 @@ async function addSource(event) {
     url: $("#sourceUrl").value.trim(),
     type: $("#sourceType").value,
   };
-  await api("/api/materials", { method: "POST", body: JSON.stringify(payload) });
+  const created = await api("/api/materials", { method: "POST", body: JSON.stringify(payload) });
+  const material = {
+    id: created.id,
+    title: created.title,
+    url: created.url,
+    type: created.type,
+    status: "pending",
+    origin: "web",
+    chunks_count: 0,
+    note: "Ожидает индексации.",
+    updated_at: new Date().toISOString(),
+  };
+  state.materials = [material, ...state.materials.filter((item) => item.id !== material.id)];
+  syncMaterialFilterOptions();
+  renderMaterials();
   event.target.reset();
   closeSourceModal();
   $("#reindexStatus").textContent = "Источник добавлен. Нажмите «Переиндексировать», чтобы подготовить его для поиска.";
-  await loadMaterials();
+  flashMaterialCard(material.id, "card-added");
+  refreshIcons();
 }
 
 async function deleteMaterial(material) {
@@ -365,21 +446,43 @@ async function deleteMaterial(material) {
       ? "Удалить manual-файл и источник из базы?"
       : "Удалить источник из списка и базы?";
   if (!confirm(message)) return;
+  const card = materialsListEl.querySelector(`[data-source-id="${CSS.escape(material.id)}"]`);
+  if (card) {
+    card.classList.add("card-removing");
+  }
   await api(`/api/materials/${encodeURIComponent(material.id)}`, { method: "DELETE" });
+  state.materials = state.materials.filter((item) => item.id !== material.id);
+  syncMaterialFilterOptions();
+  setTimeout(() => renderMaterials(), card ? 220 : 0);
   $("#reindexStatus").textContent = "Источник удален. При необходимости нажмите «Переиндексировать».";
-  await loadMaterials();
 }
 
 async function reindex() {
   const confirmed = confirm("Переиндексация скачает источники и перестроит базу. Без API ключа токены не тратятся, с ключом будут потрачены embeddings-токены. Продолжить?");
   if (!confirmed) return;
+  const button = $("#reindexBtn");
   const status = $("#reindexStatus");
-  status.textContent = "Идет подготовка базы. Для больших PDF это может занять несколько минут.";
+  button.disabled = true;
+  button.classList.add("loading");
+  status.className = "status-line status-working";
+  status.innerHTML = '<span class="status-spinner"></span><span>Переиндексация запущена. Скачиваю источники, читаю PDF и обновляю базу поиска...</span>';
   try {
     const result = await api("/api/reindex", { method: "POST" });
-    status.textContent = `${result.message} Prepared: ${result.prepared}, vector indexed: ${result.indexed}, metadata: ${result.metadata_only}, unavailable: ${result.unavailable}`;
+    status.className = "status-line status-success";
+    status.innerHTML = `
+      <span class="status-dot ok"></span>
+      <span>${escapeHtml(result.message)} Готово: ${result.prepared}, vector: ${result.indexed}, metadata: ${result.metadata_only}, недоступно: ${result.unavailable}.</span>
+    `;
+    materialsListEl.classList.remove("just-refreshed");
+    void materialsListEl.offsetWidth;
+    materialsListEl.classList.add("just-refreshed");
   } catch (error) {
-    status.textContent = "Ошибка индексации: " + error.message;
+    status.className = "status-line status-error";
+    status.innerHTML = `<span class="status-dot bad"></span><span>Ошибка индексации: ${escapeHtml(error.message)}</span>`;
+  } finally {
+    button.disabled = false;
+    button.classList.remove("loading");
+    refreshIcons();
   }
   await loadMaterials();
 }
@@ -521,16 +624,58 @@ function closeSourceModal() {
   $("#sourceModal").setAttribute("aria-hidden", "true");
 }
 
+function openEditSourceModal(material) {
+  $("#editSourceId").value = material.id;
+  $("#editSourceOrigin").value = material.origin;
+  $("#editSourceTitle").value = material.title;
+  $("#editSourceUrl").value = material.url;
+  $("#editSourceType").value = material.type;
+  $("#editSourceUrl").disabled = material.origin === "manual";
+  $("#editSourceModal").classList.add("open");
+  $("#editSourceModal").setAttribute("aria-hidden", "false");
+  setTimeout(() => $("#editSourceTitle").focus(), 0);
+}
+
+function closeEditSourceModal() {
+  $("#editSourceModal").classList.remove("open");
+  $("#editSourceModal").setAttribute("aria-hidden", "true");
+}
+
 function bindSourceModal() {
   $("#openSourceModalBtn").addEventListener("click", openSourceModal);
   $("#closeSourceModalBtn").addEventListener("click", closeSourceModal);
   $("#cancelSourceModalBtn").addEventListener("click", closeSourceModal);
+  $("#closeEditSourceModalBtn").addEventListener("click", closeEditSourceModal);
+  $("#cancelEditSourceModalBtn").addEventListener("click", closeEditSourceModal);
   $("#sourceModal").addEventListener("click", (event) => {
     if (event.target.id === "sourceModal") closeSourceModal();
   });
+  $("#editSourceModal").addEventListener("click", (event) => {
+    if (event.target.id === "editSourceModal") closeEditSourceModal();
+  });
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") closeSourceModal();
+    if (event.key === "Escape") closeEditSourceModal();
   });
+}
+
+async function updateSource(event) {
+  event.preventDefault();
+  const sourceId = $("#editSourceId").value;
+  const origin = $("#editSourceOrigin").value;
+  const payload = {
+    title: $("#editSourceTitle").value.trim(),
+    type: $("#editSourceType").value.trim(),
+    url: origin === "manual" ? undefined : $("#editSourceUrl").value.trim(),
+  };
+  const updated = await api(`/api/materials/${encodeURIComponent(sourceId)}`, { method: "PATCH", body: JSON.stringify(payload) });
+  state.materials = state.materials.map((item) => (item.id === sourceId ? { ...item, ...updated } : item));
+  syncMaterialFilterOptions();
+  renderMaterials();
+  closeEditSourceModal();
+  $("#reindexStatus").textContent = "Источник обновлен. Нажмите «Переиндексировать», чтобы обновить поиск.";
+  flashMaterialCard(sourceId, "card-updated");
+  refreshIcons();
 }
 
 async function init() {
@@ -539,11 +684,13 @@ async function init() {
   bindSourceModal();
   $("#chatForm").addEventListener("submit", sendMessage);
   $("#messageInput").addEventListener("input", (event) => resizeComposer(event.target));
+  $("#messageInput").addEventListener("keydown", handleComposerKeydown);
   rotateChatPlaceholder();
   $("#imageInput").addEventListener("change", uploadImage);
   $("#reindexBtn").addEventListener("click", reindex);
-  $("#refreshMaterialsBtn").addEventListener("click", loadMaterials);
+  $("#refreshMaterialsBtn").addEventListener("click", refreshMaterials);
   $("#addSourceForm").addEventListener("submit", addSource);
+  $("#editSourceForm").addEventListener("submit", updateSource);
   ["materialSearch", "statusFilter", "originFilter", "typeFilter", "sortMaterials"].forEach((id) => {
     $(`#${id}`).addEventListener("input", renderMaterials);
   });
@@ -552,7 +699,13 @@ async function init() {
   await loadMaterials();
   await loadTools();
   renderCourses();
-  startDraftChat();
+  const savedTab = localStorage.getItem("activeTab") || "chat";
+  if (savedTab === "chat") {
+    startDraftChat();
+  } else {
+    renderEmptyState();
+    setActiveTab(["materials", "tools", "courses"].includes(savedTab) ? savedTab : "chat");
+  }
   refreshIcons();
 }
 

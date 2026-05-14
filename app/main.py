@@ -30,6 +30,24 @@ app = FastAPI(title="AI Sound Design Assistant")
 app.mount("/static", StaticFiles(directory=ROOT_DIR / "app" / "static"), name="static")
 
 
+def source_citations(contexts: list[dict]) -> list[dict]:
+    citations = []
+    seen_urls = set()
+    for item in contexts:
+        url = item["url"]
+        if url in seen_urls:
+            continue
+        seen_urls.add(url)
+        citations.append(
+            {
+                "title": item["title"],
+                "url": url,
+                "source_id": item["source_id"],
+            }
+        )
+    return citations
+
+
 class ChatRequest(BaseModel):
     session_id: str | None = None
     message: str
@@ -44,6 +62,12 @@ class SourceRequest(BaseModel):
     title: str
     url: str
     type: str = "web"
+
+
+class SourceUpdateRequest(BaseModel):
+    title: str
+    type: str
+    url: str | None = None
 
 
 @app.get("/")
@@ -110,29 +134,30 @@ async def chat(payload: ChatRequest):
 
     if not settings.has_api_key:
         if contexts:
-            citations = [
-                {
-                    "title": item["title"],
-                    "url": item["url"],
-                    "source_id": item["source_id"],
-                    "chunk_index": item["chunk_index"],
-                }
-                for item in contexts
-            ]
-            fragments = "\n\n".join(
-                f"{index}. {item['title']}\n{item['text'][:520]}..."
-                for index, item in enumerate(contexts[:3], start=1)
+            citations = source_citations(contexts)
+            found_places = "\n\n".join(
+                (
+                    f"{index}. {item['title']} · фрагмент {int(item['chunk_index']) + 1}\n"
+                    f"Найденные слова: {', '.join(item.get('matched_terms') or []) or 'не указаны'}\n"
+                    f"{item.get('snippet') or item['text'][:520]}"
+                )
+                for index, item in enumerate(contexts[:5], start=1)
+            )
+            sources = "\n".join(
+                f"{index}. {item['title']}\n{item['url']}"
+                for index, item in enumerate(citations, start=1)
             )
             answer = (
                 "LLM API ключ пока не задан, поэтому я не генерирую полноценный ответ. "
                 "Но база может работать в режиме keyword-поиска без расхода токенов.\n\n"
-                f"Найденные фрагменты:\n{fragments}"
+                f"Найденные места:\n{found_places}\n\n"
+                f"Источники:\n{sources}"
             )
             chat_store.add_message(session_id, "assistant", answer, citations)
             return {"session_id": session_id, "answer": answer, "citations": citations}
         answer = (
             "Сервер и история диалога работают, но LLM API ключ пока не задан. "
-            "Нажмите `ReIndex` во вкладке Materials, чтобы подготовить keyword-базу без расхода токенов. "
+            "Нажмите «Переиндексировать» во вкладке «База знаний», чтобы подготовить keyword-базу без расхода токенов. "
             "После добавления `OPENAI_API_KEY` заработают полноценные ответы LLM и vector RAG."
         )
         chat_store.add_message(session_id, "assistant", answer, [])
@@ -158,15 +183,7 @@ async def chat(payload: ChatRequest):
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Ошибка LLM API: {exc}") from exc
 
-    citations = [
-        {
-            "title": item["title"],
-            "url": item["url"],
-            "source_id": item["source_id"],
-            "chunk_index": item["chunk_index"],
-        }
-        for item in contexts
-    ]
+    citations = source_citations(contexts)
     chat_store.add_message(session_id, "assistant", answer, citations)
     return {"session_id": session_id, "answer": answer, "citations": citations}
 
@@ -195,6 +212,14 @@ async def delete_material(source_id: str):
     if not deleted:
         raise HTTPException(status_code=404, detail="Источник не найден.")
     return {"ok": True}
+
+
+@app.patch("/api/materials/{source_id}")
+async def update_material(source_id: str, payload: SourceUpdateRequest):
+    try:
+        return source_store.update_source(source_id, payload.title, payload.type, payload.url)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.post("/api/reindex")

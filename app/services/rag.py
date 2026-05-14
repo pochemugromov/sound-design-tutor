@@ -20,6 +20,32 @@ from app.services.sources import SourceStore
 
 COLLECTION_NAME = "sound_design_knowledge"
 
+STOPWORDS = {
+    "что",
+    "это",
+    "такое",
+    "как",
+    "где",
+    "для",
+    "или",
+    "при",
+    "про",
+    "мне",
+    "его",
+    "она",
+    "они",
+    "the",
+    "and",
+    "for",
+    "with",
+    "what",
+    "where",
+    "how",
+    "why",
+    "live",
+    "ableton",
+}
+
 
 def clean_text(text: str) -> str:
     text = re.sub(r"\s+", " ", text)
@@ -56,15 +82,42 @@ QUERY_SYNONYMS = {
     "синтезатор": ["synthesizer", "synth"],
     "синтез": ["synthesis", "synth"],
     "ableton": ["ableton", "live"],
+    "mixer": ["mixing", "mixer", "routing"],
+    "микшер": ["mixer", "mixing"],
+    "микшере": ["mixer", "mixing"],
+    "channel": ["track", "channel", "routing"],
+    "канал": ["track", "channel", "routing"],
+    "каналы": ["track", "channel", "routing"],
 }
 
 
 def expanded_query_terms(query: str) -> Counter:
-    terms = Counter(tokenize(query))
+    terms = Counter(term for term in tokenize(query) if term not in STOPWORDS)
     for term in list(terms):
         for synonym in QUERY_SYNONYMS.get(term, []):
             terms[synonym] += 1
     return terms
+
+
+def matched_terms_in_text(text: str, terms: Counter) -> list[str]:
+    text_tokens = set(tokenize(text))
+    return [term for term in terms if term in text_tokens]
+
+
+def best_keyword_snippet(text: str, terms: Counter, size: int = 520) -> str:
+    normalized = normalize_for_search(text)
+    positions = [normalized.find(term) for term in terms if normalized.find(term) >= 0]
+    if not positions:
+        return text[:size].strip()
+    center = min(positions)
+    start = max(0, center - size // 3)
+    end = min(len(text), start + size)
+    snippet = text[start:end].strip()
+    if start > 0:
+        snippet = "..." + snippet
+    if end < len(text):
+        snippet += "..."
+    return snippet
 
 
 def chunk_text(text: str, size: int = 1400, overlap: int = 220) -> list[str]:
@@ -129,43 +182,43 @@ class RagService:
                 self.source_store.update_status(source["id"], result["status"], 0, result["note"])
                 continue
 
-            chunks = self._limited_chunks(result["text"])
-            if not chunks:
+            keyword_chunks = self._keyword_chunks(result["text"])
+            if not keyword_chunks:
                 unavailable += 1
                 self.source_store.update_status(source["id"], "metadata_only", 0, "Текст найден, но он слишком короткий для чанков.")
                 continue
-            self._store_chunks(source, chunks)
+            self._store_chunks(source, keyword_chunks)
             prepared += 1
 
             if collection is not None:
-                await self._index_chunks(collection, source, chunks)
+                await self._index_chunks(collection, source, self._embedding_chunks(keyword_chunks))
                 embedded += 1
                 status = "indexed"
                 note = "Источник загружен, подготовлен и добавлен в векторный индекс."
             else:
                 status = "prepared"
                 note = "Источник загружен и подготовлен для keyword-поиска. Векторный индекс будет создан после добавления API ключа."
-            self.source_store.update_status(source["id"], status, len(chunks), note)
+            self.source_store.update_status(source["id"], status, len(keyword_chunks), note)
             await asyncio.sleep(0.1)
 
         for source in self.source_store.manual_sources():
             text = self._read_manual_source(source)
-            chunks = self._limited_chunks(text)
-            if not chunks:
+            keyword_chunks = self._keyword_chunks(text)
+            if not keyword_chunks:
                 unavailable += 1
                 self.source_store.update_status(source["id"], "unavailable", 0, "Файл пустой или не читается.")
                 continue
-            self._store_chunks(source, chunks)
+            self._store_chunks(source, keyword_chunks)
             prepared += 1
             if collection is not None:
-                await self._index_chunks(collection, source, chunks)
+                await self._index_chunks(collection, source, self._embedding_chunks(keyword_chunks))
                 embedded += 1
                 status = "indexed"
                 note = "Локальный материал подготовлен и добавлен в векторный индекс."
             else:
                 status = "prepared"
                 note = "Локальный материал подготовлен для keyword-поиска."
-            self.source_store.update_status(source["id"], status, len(chunks), note)
+            self.source_store.update_status(source["id"], status, len(keyword_chunks), note)
 
         message = "Подготовка базы завершена."
         if self.settings.has_api_key:
@@ -200,18 +253,40 @@ class RagService:
                 """
             ).fetchall()
 
+        query_phrase = normalize_for_search(query)
+        query_terms = [term for term in tokenize(query) if term not in STOPWORDS]
+        requires_primary_match = any(re.search(r"[a-z]", term) for term in query_terms)
         scored = []
         for row in rows:
             search_text = row["search_text"]
-            score = sum(search_text.count(term) * weight for term, weight in terms.items())
+            token_counts = Counter(tokenize(search_text))
+            if requires_primary_match and not any(token_counts[term] for term in query_terms):
+                continue
+            matched = [term for term in terms if token_counts[term]]
+            if not matched:
+                continue
+            score = sum(min(token_counts[term], 3) * weight for term, weight in terms.items())
+            score += len(set(matched)) * 3
+            if query_phrase and query_phrase in search_text:
+                score += 12
+            if len(query_terms) > 1:
+                positions = [search_text.find(term) for term in query_terms if search_text.find(term) >= 0]
+                if len(positions) >= 2 and max(positions) - min(positions) < 240:
+                    score += 8
+            if "ableton" in row["title"].lower():
+                score += 2
+            primary_matches = [term for term in query_terms if token_counts[term]]
+            score += len(primary_matches) * 5
             if score:
-                scored.append((score, dict(row)))
+                scored.append((score, dict(row), matched, primary_matches))
         scored.sort(key=lambda item: item[0], reverse=True)
         contexts = []
-        for score, row in scored[: top_k or self.settings.rag_top_k]:
+        for score, row, matched, primary_matches in scored[: top_k or self.settings.rag_top_k]:
+            snippet_terms = Counter({term: terms[term] for term in primary_matches}) if primary_matches else terms
             contexts.append(
                 {
                     "text": row["text"],
+                    "snippet": best_keyword_snippet(row["text"], snippet_terms),
                     "title": row["title"],
                     "url": row["url"],
                     "source_id": row["source_id"],
@@ -219,6 +294,7 @@ class RagService:
                     "distance": None,
                     "search_mode": "keyword",
                     "score": score,
+                    "matched_terms": matched,
                 }
             )
         return contexts
@@ -255,8 +331,13 @@ class RagService:
             )
         return contexts
 
-    def _limited_chunks(self, text: str) -> list[str]:
+    def _keyword_chunks(self, text: str) -> list[str]:
         chunks = chunk_text(text)
+        if self.settings.rag_max_keyword_chunks_per_source > 0:
+            return chunks[: self.settings.rag_max_keyword_chunks_per_source]
+        return chunks
+
+    def _embedding_chunks(self, chunks: list[str]) -> list[str]:
         if self.settings.rag_max_chunks_per_source > 0:
             return chunks[: self.settings.rag_max_chunks_per_source]
         return chunks

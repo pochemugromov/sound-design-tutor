@@ -22,6 +22,7 @@ class Settings:
     rag_top_k: int
     rag_score_threshold: float
     rag_max_chunks_per_source: int
+    rag_max_keyword_chunks_per_source: int
     database_path: Path
     chroma_path: Path
     data_dir: Path
@@ -47,6 +48,7 @@ def get_settings() -> Settings:
         rag_top_k=int(os.getenv("RAG_TOP_K", "6")),
         rag_score_threshold=float(os.getenv("RAG_SCORE_THRESHOLD", "0.35")),
         rag_max_chunks_per_source=int(os.getenv("RAG_MAX_CHUNKS_PER_SOURCE", "24")),
+        rag_max_keyword_chunks_per_source=int(os.getenv("RAG_MAX_KEYWORD_CHUNKS_PER_SOURCE", "0")),
         database_path=Path(os.getenv("DATABASE_PATH", data_dir / "app.db")),
         chroma_path=Path(os.getenv("CHROMA_PATH", data_dir / "chroma")),
         data_dir=data_dir,

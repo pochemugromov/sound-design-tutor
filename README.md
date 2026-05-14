@@ -56,7 +56,7 @@ http://127.0.0.1:8000
 
 ## Деплой на Vercel
 
-В проект добавлены `index.py` и `vercel.json`, чтобы Vercel явно запускал FastAPI-приложение и отправлял все пути в backend. Если без этого появляется `404: NOT_FOUND`, Vercel задеплоил репозиторий без корректного Python entrypoint.
+В проект добавлены `api/index.py` и `vercel.json`, чтобы Vercel явно запускал FastAPI-приложение как Python Function и отправлял все пути в backend. Если появляется `404: NOT_FOUND` или браузер скачивает `.py` файл, Vercel задеплоил репозиторий без корректного Python Function entrypoint.
 
 Настройки Vercel:
 
