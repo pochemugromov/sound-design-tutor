@@ -16,11 +16,16 @@ class SourceStore:
         self.sources_file = settings.data_dir / "sources.json"
 
     def configured_sources(self) -> list[dict]:
-        if not self.sources_file.exists():
+        if self.sources_file.exists():
+            return json.loads(self.sources_file.read_text(encoding="utf-8"))
+        bundled_sources = ROOT_DIR / "data" / "sources.json"
+        if bundled_sources.exists():
+            return json.loads(bundled_sources.read_text(encoding="utf-8"))
+        else:
             return []
-        return json.loads(self.sources_file.read_text(encoding="utf-8"))
 
     def save_configured_sources(self, sources: list[dict]) -> None:
+        self.sources_file.parent.mkdir(parents=True, exist_ok=True)
         self.sources_file.write_text(
             json.dumps(sources, ensure_ascii=False, indent=2),
             encoding="utf-8",

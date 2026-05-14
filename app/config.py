@@ -35,7 +35,8 @@ class Settings:
 
 
 def get_settings() -> Settings:
-    data_dir = ROOT_DIR / "data"
+    is_vercel = os.getenv("VERCEL") == "1"
+    data_dir = Path("/tmp/sound-design-tutor") if is_vercel else ROOT_DIR / "data"
     return Settings(
         openai_api_key=os.getenv("OPENAI_API_KEY", ""),
         openai_base_url=os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/"),
@@ -46,8 +47,8 @@ def get_settings() -> Settings:
         rag_top_k=int(os.getenv("RAG_TOP_K", "6")),
         rag_score_threshold=float(os.getenv("RAG_SCORE_THRESHOLD", "0.35")),
         rag_max_chunks_per_source=int(os.getenv("RAG_MAX_CHUNKS_PER_SOURCE", "24")),
-        database_path=ROOT_DIR / os.getenv("DATABASE_PATH", "data/app.db"),
-        chroma_path=ROOT_DIR / os.getenv("CHROMA_PATH", "data/chroma"),
+        database_path=Path(os.getenv("DATABASE_PATH", data_dir / "app.db")),
+        chroma_path=Path(os.getenv("CHROMA_PATH", data_dir / "chroma")),
         data_dir=data_dir,
         manual_dir=data_dir / "manual",
         raw_dir=data_dir / "raw",

@@ -54,6 +54,20 @@ uvicorn app.main:app --host 127.0.0.1 --port 8000
 http://127.0.0.1:8000
 ```
 
+## Деплой на Vercel
+
+В проект добавлены `index.py` и `vercel.json`, чтобы Vercel явно запускал FastAPI-приложение и отправлял все пути в backend. Если без этого появляется `404: NOT_FOUND`, Vercel задеплоил репозиторий без корректного Python entrypoint.
+
+Настройки Vercel:
+
+- Framework Preset: `Other`.
+- Build Command: оставить пустым.
+- Output Directory: оставить пустым.
+- Install Command: `pip install -r requirements.txt`.
+- Environment Variables: добавить `OPENAI_API_KEY` и при необходимости `CHAT_MODEL`, `EMBEDDING_MODEL`.
+
+На Vercel runtime-файлы SQLite, ChromaDB и загруженные материалы пишутся во временную директорию `/tmp`. Это подходит для демо MVP, но не для постоянного хранения: после cold start данные могут быть пересозданы. Для production-версии нужна внешняя БД и отдельное хранилище файлов.
+
 ## Индексация базы знаний
 
 1. Откройте вкладку `Materials`.
