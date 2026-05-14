@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AI Sound Design Assistant</title>
+    <link rel="icon" type="image/svg+xml" href="/static/herzen.svg" />
+    <link rel="stylesheet" href="/static/styles.css" />
+    <script src="/static/lucide.min.js" defer></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <img src="/static/herzen.svg" alt="РГПУ им. А. И. Герцена" class="brand-logo" />
+          <div>
+            <h1>AI Sound Design</h1>
+            <p id="apiStatus">Проверка API</p>
+          </div>
+        </div>
+
+        <nav class="tabs" aria-label="Разделы">
+          <button class="tab active" id="newSessionBtn" data-tab="chat">
+            <i data-lucide="square-pen"></i>
+            Новый диалог
+          </button>
+          <button class="tab" data-tab="materials"><i data-lucide="database"></i>База знаний</button>
+          <button class="tab" data-tab="tools"><i data-lucide="sparkles"></i>Навыки</button>
+          <button class="tab" data-tab="courses"><i data-lucide="graduation-cap"></i>Курсы</button>
+        </nav>
+
+        <div id="sessionsList" class="sessions-list"></div>
+      </aside>
+
+      <main class="workspace">
+        <section id="chatTab" class="panel active-panel">
+          <header class="panel-header chat-topbar">
+            <div>
+              <h2 id="chatTitle">Новый диалог</h2>
+              <p>Учебный агент-наставник РГПУ им. А. И. Герцена</p>
+            </div>
+          </header>
+
+          <div id="messages" class="messages"></div>
+
+          <form id="chatForm" class="composer">
+            <div class="composer-inner">
+              <div id="attachedImages" class="attached-images"></div>
+              <textarea id="messageInput" rows="2" placeholder="Опиши, что не получается со звуком: глухо, резко, не играет MIDI или потерялся эффект"></textarea>
+              <div class="composer-actions">
+                <div class="attach-wrap">
+                  <button id="attachMenuBtn" type="button" class="attach-button" aria-label="Добавить файлы"><i data-lucide="plus"></i></button>
+                  <div id="attachMenu" class="attach-menu">
+                    <label class="attach-menu-item">
+                      <i data-lucide="image-plus"></i>
+                      Добавить фото и файлы
+                      <input id="imageInput" type="file" accept="image/*" />
+                    </label>
+                  </div>
+                </div>
+                <button type="submit" class="send-button" aria-label="Отправить"><i data-lucide="arrow-up"></i></button>
+              </div>
+            </div>
+          </form>
+        </section>
+
+        <section id="materialsTab" class="panel">
+          <header class="panel-header">
+            <div>
+              <h2>Материалы базы знаний</h2>
+            </div>
+            <div class="header-actions">
+              <button id="openSourceModalBtn" class="primary-button"><i data-lucide="plus"></i>Добавить источник</button>
+              <button id="refreshMaterialsBtn" class="secondary-button">Обновить</button>
+              <button id="reindexBtn" class="warning-button"><i data-lucide="triangle-alert"></i>Переиндексировать</button>
+            </div>
+          </header>
+
+          <div class="materials-toolbar">
+            <div class="filters">
+              <input id="materialSearch" type="search" placeholder="Поиск по названию или ссылке" />
+              <select id="statusFilter">
+                <option value="">Все статусы</option>
+              </select>
+              <select id="originFilter">
+                <option value="">Все источники</option>
+                <option value="web">Web-ссылки</option>
+                <option value="manual">Manual-файлы</option>
+              </select>
+              <select id="typeFilter">
+                <option value="">Все типы</option>
+              </select>
+              <select id="sortMaterials">
+                <option value="status">Сортировка: статус</option>
+                <option value="origin">Сортировка: вид</option>
+                <option value="title">Сортировка: название</option>
+                <option value="chunks">Сортировка: chunks</option>
+              </select>
+            </div>
+          </div>
+
+          <div id="reindexStatus" class="status-line"></div>
+          <div id="materialsList" class="materials-list"></div>
+        </section>
+
+        <section id="coursesTab" class="panel">
+          <header class="panel-header">
+            <div>
+              <h2>Курсы</h2>
+              <p>Агент-методист помогает двигаться по учебной траектории и фиксировать прогресс.</p>
+            </div>
+          </header>
+
+          <div class="courses-shell">
+            <section class="methodist-hero">
+              <div>
+                <span class="hero-kicker">Агент-методист</span>
+                <h2>Маршрут освоения саунд-дизайна</h2>
+                <p>Курсы разбиты на короткие модули: теория, действие в Ableton Live, самопроверка и рефлексия. Отмечай выполненные шаги, чтобы видеть траекторию подготовки.</p>
+              </div>
+              <div class="hero-stats">
+                <div>
+                  <strong id="courseTotalProgress">0%</strong>
+                  <span>общий прогресс</span>
+                </div>
+                <div>
+                  <strong id="courseCompletedModules">0</strong>
+                  <span>модулей закрыто</span>
+                </div>
+              </div>
+            </section>
+
+            <div id="coursesList" class="courses-list"></div>
+          </div>
+        </section>
+
+        <section id="toolsTab" class="panel">
+          <header class="panel-header">
+            <div>
+              <h2>Навыки AI-агента</h2>
+              <p>Активные и запланированные модули агентной системы из ВКР.</p>
+            </div>
+          </header>
+          <div id="toolsList" class="tools-grid"></div>
+        </section>
+      </main>
+    </div>
+
+    <div id="sourceModal" class="modal-backdrop" aria-hidden="true">
+      <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="sourceModalTitle">
+        <div class="modal-head">
+          <h2 id="sourceModalTitle">Добавить источник</h2>
+          <button id="closeSourceModalBtn" class="modal-close" type="button" aria-label="Закрыть"><i data-lucide="x"></i></button>
+        </div>
+        <form id="addSourceForm" class="modal-form">
+          <label>
+            Название источника
+            <input id="sourceTitle" type="text" placeholder="Ableton Help: Audio Effects" required />
+          </label>
+          <label>
+            Ссылка
+            <input id="sourceUrl" type="url" placeholder="https://example.com/article или PDF" required />
+          </label>
+          <label>
+            Тип
+            <select id="sourceType">
+              <option value="web">web</option>
+              <option value="pdf_or_web">pdf_or_web</option>
+              <option value="official_manual">official_manual</option>
+              <option value="official_help">official_help</option>
+              <option value="article_pdf">article_pdf</option>
+              <option value="book_metadata">book_metadata</option>
+            </select>
+          </label>
+          <div class="source-info">
+            Читаются открытые HTML-страницы и прямые PDF-ссылки. JS-only страницы, paywall, закрытые DOI и файлы без текстового слоя будут отмечены как metadata_only или unavailable.
+          </div>
+          <div class="modal-actions">
+            <button class="secondary-button" type="button" id="cancelSourceModalBtn">Отмена</button>
+            <button class="primary-button" type="submit">Добавить</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>

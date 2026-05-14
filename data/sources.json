@@ -1,0 +1,163 @@
+[
+  {
+    "id": "ableton-live-official",
+    "title": "Ableton Live 12. Official page",
+    "url": "https://www.ableton.com/en/live/",
+    "type": "web",
+    "vkr_ref": "[3]"
+  },
+  {
+    "id": "unesco-genai-education",
+    "title": "UNESCO. Guidance for generative AI in education and research",
+    "url": "https://unesdoc.unesco.org/ark:/48223/pf0000389639",
+    "type": "pdf_or_web",
+    "vkr_ref": "[4]"
+  },
+  {
+    "id": "yandex-rag-basics",
+    "title": "RAG: учим искусственный интеллект работать с новыми данными",
+    "url": "https://yandex.cloud/ru/blog/posts/2025/05/retrieval-augmented-generation-basics",
+    "type": "web",
+    "vkr_ref": "[5]"
+  },
+  {
+    "id": "shirokolobova-ai-teacher-optimization",
+    "title": "Широколобова А. Г. Искусственный интеллект как инструмент оптимизации работы преподавателя высшей школы",
+    "url": "https://doi.org/10.30853/ped20240018",
+    "type": "doi",
+    "vkr_ref": "[6]"
+  },
+  {
+    "id": "gorbunova-mezentseva-sound-design-education",
+    "title": "Горбунова И. Б., Мезенцева С. В. Саунд-дизайн как образовательное направление высшей школы",
+    "url": "https://doi.org/10.56620/2782-3598.2022.3.184-195",
+    "type": "doi",
+    "vkr_ref": "[7]"
+  },
+  {
+    "id": "alekseeva-mikhailova-komandyshko-ai-music-education",
+    "title": "Алексеева Л. Л., Михайлова А. А., Командышко Е. Ф. Искусственный интеллект и музыкальное образование",
+    "url": "https://doi.org/10.24412/1997-0803-2024-4120-112-120",
+    "type": "doi",
+    "vkr_ref": "[8]"
+  },
+  {
+    "id": "dubrovsky-gorbik-ai-music-learning",
+    "title": "Дубровский В. В., Горбик Я. А. Изучение возможностей применения искусственного интеллекта в обучении музыке",
+    "url": "https://doi.org/10.18137/RNU.HET.24.04.P.074",
+    "type": "doi",
+    "vkr_ref": "[9]"
+  },
+  {
+    "id": "dubrovsky-gorbik-ai-higher-music-education",
+    "title": "Дубровский В. В., Горбик Я. А. Направления использования искусственного интеллекта в высшем музыкальном образовании",
+    "url": "https://doi.org/10.17513/snt.40408",
+    "type": "doi",
+    "vkr_ref": "[10]"
+  },
+  {
+    "id": "titova-temuryan-intelligent-agents",
+    "title": "Титова С. В., Темурян К. Т. Интеллектуальные агенты в обучении ИЯ: типология, возможности, вызовы",
+    "url": "https://doi.org/10.17223/19996195/65/12",
+    "type": "doi",
+    "vkr_ref": "[11]"
+  },
+  {
+    "id": "ableton-live-12-manual",
+    "title": "Ableton Reference Manual Version 12",
+    "url": "https://www.ableton.com/en/live-manual/12/",
+    "type": "official_manual",
+    "priority": "high"
+  },
+  {
+    "id": "ableton-help-live",
+    "title": "Ableton Help: Live",
+    "url": "https://help.ableton.com/hc/en-us/categories/11547589119004-Live",
+    "type": "official_help",
+    "priority": "high"
+  },
+  {
+    "id": "ableton-learn-live",
+    "title": "Ableton Learn Live",
+    "url": "https://www.ableton.com/en/live/learn-live/",
+    "type": "official_learning",
+    "priority": "high"
+  },
+  {
+    "id": "ableton-learning-music",
+    "title": "Ableton Learning Music",
+    "url": "https://learningmusic.ableton.com/",
+    "type": "official_learning",
+    "priority": "medium"
+  },
+  {
+    "id": "ableton-learning-synths",
+    "title": "Ableton Learning Synths",
+    "url": "https://learningsynths.ableton.com/",
+    "type": "official_learning",
+    "priority": "medium"
+  },
+  {
+    "id": "mit-ocw-sound-design",
+    "title": "MIT OpenCourseWare: Music and Technology: Sound Design",
+    "url": "https://ocw.mit.edu/courses/21m-380-music-and-technology-sound-design-spring-2016/",
+    "type": "open_course",
+    "priority": "high"
+  },
+  {
+    "id": "gorbunova-herzen-profile",
+    "title": "Горбунова Ирина Борисовна - лаборатория музыкально-компьютерных технологий РГПУ им. А. И. Герцена",
+    "url": "https://gorbunova.herzen.spb.ru/%D1%80%D1%83%D0%BA%D0%BE%D0%B2%D0%BE%D0%B4%D0%B8%D1%82%D0%B5%D0%BB%D1%8C/",
+    "type": "herzen_profile",
+    "priority": "high"
+  },
+  {
+    "id": "gorbunova-sound-architectonics",
+    "title": "Горбунова И. Б. Архитектоника звука: монография",
+    "url": "https://gorbunova.herzen.spb.ru/wp-content/uploads/secret/%D0%9C%D0%BE%D0%BD%D0%BE%D0%B3%D1%80%D0%B0%D1%84%D0%B8%D1%8F.%20%D0%92%D0%B5%D1%80%D1%81%D1%82%D0%BA%D0%B0-3.pdf",
+    "type": "book_pdf",
+    "priority": "high"
+  },
+  {
+    "id": "gorbunova-mezentseva-sound-design-education-pdf",
+    "title": "Горбунова И. Б., Мезенцева С. В. Саунд-дизайн как образовательное направление высшей школы: проблемы и перспективы",
+    "url": "https://russianmusicology.com/index.php/RM/article/download/1321/1421",
+    "type": "article_pdf",
+    "priority": "high"
+  },
+  {
+    "id": "herzen-it-music-sound-design-program",
+    "title": "РГПУ им. А. И. Герцена: Информационные технологии в музыке и саунд-дизайне",
+    "url": "https://www.herzen.spb.ru/abiturients/obrazovatelnye-programmy/bachelor/36/57733/",
+    "type": "education_program",
+    "priority": "medium"
+  },
+  {
+    "id": "farnell-designing-sound",
+    "title": "Andy Farnell. Designing Sound",
+    "url": "https://mitpress.mit.edu/9780262014410/designing-sound/",
+    "type": "book_metadata",
+    "priority": "medium"
+  },
+  {
+    "id": "roads-computer-music-tutorial",
+    "title": "Curtis Roads. The Computer Music Tutorial",
+    "url": "https://mitpress.mit.edu/9780262044912/the-computer-music-tutorial/",
+    "type": "book_metadata",
+    "priority": "medium"
+  },
+  {
+    "id": "reiss-mcpherson-audio-effects",
+    "title": "Joshua Reiss, Andrew McPherson. Audio Effects: Theory, Implementation and Application",
+    "url": "https://www.routledge.com/Audio-Effects-Theory-Implementation-and-Application/Reiss-McPherson/p/book/9781032974859",
+    "type": "book_metadata",
+    "priority": "medium"
+  },
+  {
+    "id": "puckette-electronic-music",
+    "title": "Miller Puckette. Theory and Techniques of Electronic Music",
+    "url": "https://msp.ucsd.edu/~msp/techniques/v0.05/book.pdf",
+    "type": "book_pdf",
+    "priority": "medium"
+  }
+]
