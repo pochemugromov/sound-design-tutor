@@ -1246,6 +1246,40 @@ function bindAuth() {
   $("#logoutBtn").addEventListener("click", handleLogout);
 }
 
+// ============ Mobile sidebar drawer ============
+
+function openMobileSidebar() {
+  $("#sidebar").classList.add("open");
+  $("#sidebarBackdrop").classList.add("open");
+  document.body.classList.add("body-no-scroll");
+}
+
+function closeMobileSidebar() {
+  $("#sidebar").classList.remove("open");
+  $("#sidebarBackdrop").classList.remove("open");
+  document.body.classList.remove("body-no-scroll");
+}
+
+function isMobileViewport() {
+  return window.matchMedia("(max-width: 900px)").matches;
+}
+
+function bindMobileSidebar() {
+  $("#mobileMenuBtn").addEventListener("click", openMobileSidebar);
+  $("#sidebarCloseBtn").addEventListener("click", closeMobileSidebar);
+  $("#sidebarBackdrop").addEventListener("click", closeMobileSidebar);
+  // Close drawer when user picks a tab or a session on mobile.
+  $("#sidebar").addEventListener("click", (e) => {
+    if (!isMobileViewport()) return;
+    const tab = e.target.closest(".tab");
+    const session = e.target.closest(".session-item");
+    if (tab || session) {
+      // Defer slightly so the tap effect plays before the drawer slides out.
+      setTimeout(closeMobileSidebar, 80);
+    }
+  });
+}
+
 // ============ Admin: invites & users ============
 
 async function loadInvites() {
@@ -1406,6 +1440,7 @@ async function init() {
   bindReindexModal();
   bindAuth();
   bindAdmin();
+  bindMobileSidebar();
   $("#chatForm").addEventListener("submit", sendMessage);
   $("#messageInput").addEventListener("input", (event) => resizeComposer(event.target));
   $("#messageInput").addEventListener("keydown", handleComposerKeydown);

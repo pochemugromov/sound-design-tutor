@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>AI Sound Design Assistant</title>
     <link rel="icon" type="image/svg+xml" href="/static/herzen.svg" />
-    <link rel="stylesheet" href="/static/styles.css?v=20260515-session-resilience-v23" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260515-mobile-drawer-v24" />
     <script src="/static/lucide.min.js" defer></script>
   </head>
   <body>
@@ -63,8 +63,16 @@
       </div>
     </div>
 
+    <button id="mobileMenuBtn" class="mobile-menu-btn" type="button" aria-label="Меню">
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/></svg>
+    </button>
+    <div id="sidebarBackdrop" class="sidebar-backdrop"></div>
+
     <div class="app-shell">
-      <aside class="sidebar">
+      <aside class="sidebar" id="sidebar">
+        <button id="sidebarCloseBtn" class="sidebar-close-btn" type="button" aria-label="Закрыть меню">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>
+        </button>
         <div class="brand">
           <img src="/static/herzen.svg" alt="РГПУ им. А. И. Герцена" class="brand-logo" />
           <div>
@@ -399,6 +407,6 @@
       </div>
     </div>
 
-    <script src="/static/app.js?v=20260515-session-resilience-v23"></script>
+    <script src="/static/app.js?v=20260515-mobile-drawer-v24"></script>
   </body>
 </html>

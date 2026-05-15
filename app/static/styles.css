@@ -2354,33 +2354,136 @@ code {
   color: var(--blue-dark);
 }
 
+/* ============ Mobile drawer (hidden on desktop) ============ */
+
+.mobile-menu-btn {
+  display: none;
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  border-radius: 10px;
+  cursor: pointer;
+  z-index: 60;
+  place-items: center;
+  color: var(--text);
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
+  padding: 0;
+}
+
+.mobile-menu-btn:active {
+  transform: scale(0.96);
+}
+
+.sidebar-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.55);
+  z-index: 48;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.sidebar-backdrop.open {
+  display: block;
+  opacity: 1;
+}
+
+.sidebar-close-btn {
+  display: none;
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 36px;
+  height: 36px;
+  border: 0;
+  background: transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  color: var(--muted);
+  place-items: center;
+  padding: 0;
+  z-index: 1;
+}
+
+.sidebar-close-btn:hover {
+  background: var(--surface-soft);
+  color: var(--text);
+}
+
 @media (max-width: 900px) {
   .app-shell {
     grid-template-columns: 1fr;
   }
 
   .sidebar {
-    max-height: 330px;
-    border-right: 0;
-    border-bottom: 1px solid var(--line);
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: min(85vw, 320px);
+    transform: translateX(-100%);
+    transition: transform 0.25s ease;
+    z-index: 50;
+    max-height: none;
+    border-right: 1px solid var(--line);
+    border-bottom: 0;
+    box-shadow: 0 0 32px rgba(15, 23, 42, 0.18);
+  }
+
+  .sidebar.open {
+    transform: translateX(0);
+  }
+
+  .sidebar-close-btn {
+    display: grid;
+  }
+
+  .mobile-menu-btn {
+    display: grid;
   }
 
   .panel {
-    height: calc(100vh - 330px);
+    height: 100vh;
+    min-height: 100vh;
+  }
+
+  .panel-header {
+    padding-left: 60px;
+    min-height: 60px;
+    padding-top: 12px;
+    padding-bottom: 12px;
+  }
+
+  .panel-header h2 {
+    font-size: 17px;
+    line-height: 1.25;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 1;
+    -webkit-box-orient: vertical;
+  }
+
+  .panel-header p {
+    font-size: 12px;
   }
 
   .composer {
     left: 0;
+    padding: 16px 12px 14px;
+  }
+
+  .composer-inner {
+    border-radius: 14px;
   }
 
   .filters {
     grid-template-columns: 1fr;
-  }
-
-  .panel-header {
-    align-items: flex-start;
-    flex-direction: column;
-    padding: 14px 18px;
   }
 
   .methodist-hero,
@@ -2390,5 +2493,72 @@ code {
 
   .hero-stats {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .messages {
+    padding: 16px 14px 200px;
+  }
+
+  .message {
+    width: 100%;
+  }
+
+  .message.user .message-bubble {
+    max-width: 88%;
+  }
+
+  .message-image-thumb {
+    width: 120px;
+    height: 120px;
+  }
+
+  /* Header actions in admin/materials should wrap on mobile */
+  .header-actions {
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 480px) {
+  .panel-header {
+    padding-left: 56px;
+    padding-right: 12px;
+  }
+
+  .panel-header h2 {
+    font-size: 16px;
+  }
+
+  .panel-header p {
+    display: none;
+  }
+
+  .messages {
+    padding: 14px 10px 180px;
+  }
+
+  .message.user .message-bubble {
+    max-width: 90%;
+    font-size: 14px;
+  }
+
+  .message-image-thumb {
+    width: 100px;
+    height: 100px;
+  }
+
+  .composer {
+    padding: 12px 8px 10px;
+  }
+
+  .composer-inner {
+    padding: 10px 12px 8px;
+  }
+
+  .auth-card {
+    padding: 24px 20px 28px;
+  }
+
+  .admin-grid {
+    padding: 14px 10px;
   }
 }
