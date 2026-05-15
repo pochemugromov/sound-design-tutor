@@ -783,9 +783,11 @@ async def upload_image(file: UploadFile = File(...), user: dict = Depends(get_cu
         try:
             result = vercel_blob_upload(safe_name, body, content_type, settings.blob_read_write_token)
         except Exception as exc:
+            logger.error("Vercel Blob upload failed: %s", exc, exc_info=True)
             raise HTTPException(status_code=502, detail=f"Ошибка Vercel Blob: {exc}") from exc
         url = result.get("url") or result.get("downloadUrl")
         if not url:
+            logger.error("Vercel Blob returned unexpected payload: %s", result)
             raise HTTPException(status_code=502, detail="Vercel Blob не вернул url.")
         return {"ok": True, "path": url, "name": safe_name}
 

@@ -142,8 +142,11 @@ def _is_relative_to(path: Path, parent: Path) -> bool:
 # ---------- Vercel Blob HTTP API ----------
 
 def vercel_blob_upload(filename: str, body: bytes, content_type: str, token: str) -> dict:
-    """Upload bytes to Vercel Blob storage. Returns dict with at least 'url'."""
-    # Unique-ify the pathname so different uploads don't collide.
+    """Upload bytes to Vercel Blob storage. Returns dict with at least 'url'.
+
+    Implements the @vercel/blob put() server-side HTTP API.
+    Reference: https://github.com/vercel/storage/tree/main/packages/blob
+    """
     safe_name = Path(filename or "image").name
     pathname = f"uploads/{uuid.uuid4().hex}-{safe_name}"
     url = f"https://blob.vercel-storage.com/{pathname}"
@@ -152,12 +155,17 @@ def vercel_blob_upload(filename: str, body: bytes, content_type: str, token: str
         content=body,
         headers={
             "authorization": f"Bearer {token}",
+            "access": "public",
             "x-content-type": content_type or "application/octet-stream",
             "x-api-version": "7",
+            "x-add-random-suffix": "0",
         },
         timeout=60,
     )
-    response.raise_for_status()
+    if response.status_code >= 400:
+        raise RuntimeError(
+            f"Vercel Blob API returned {response.status_code}: {response.text[:300]}"
+        )
     return response.json()
 
 
