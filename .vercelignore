@@ -3,8 +3,11 @@
 __pycache__/
 *.pyc
 *.db
-data/chroma/
-data/raw/
-data/uploads/
+data/
 logs/
-
+.claude/
+.git/
+docs_md/
+*.md
+node_modules/
+.DS_Store

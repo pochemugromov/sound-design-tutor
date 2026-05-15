@@ -8,13 +8,13 @@
 - чат с сохранением истории диалогов в SQLite;
 - новый диалог создается как черновик и попадает в историю только после первого сообщения;
 - RAG-пайплайн через ChromaDB;
-- OpenAI-compatible LLM и embeddings через `.env`;
+- Gemini API через OpenAI-compatible endpoint и `.env`;
 - вкладка `Materials` со списком источников и кнопкой `ReIndex`;
 - вкладка `Курсы` с учебными траекториями агента-методиста, модулями и локальным прогрессом;
 - добавление и удаление web-источников через вкладку `Materials`;
 - ручное пополнение базы через `data/manual` и удаление manual-источников из интерфейса;
 - удаление диалогов из левого меню;
-- загрузка изображений как заготовка под будущий мультимодальный анализ;
+- загрузка изображений с передачей в мультимодальную LLM для анализа интерфейса, проекта, ошибок и цепочек эффектов;
 - вкладка `Tools` с архитектурными заготовками под агента-критика, методиста, генератор заданий и анализ аудио/проекта.
 
 ## Курсы и агент-методист
@@ -39,8 +39,21 @@ Copy-Item .env.example .env
 Откройте `.env` и добавьте свой ключ:
 
 ```env
-OPENAI_API_KEY=your_key_here
+GEMINI_API_KEY=your_key_here
+LLM_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai
+CHAT_MODEL=gemini-3-flash-preview
+EMBEDDING_MODEL=gemini-embedding-001
+LANGFUSE_SECRET_KEY=your_langfuse_secret_key
+LANGFUSE_PUBLIC_KEY=your_langfuse_public_key
+LANGFUSE_BASE_URL=https://cloud.langfuse.com
+LANGFUSE_TRACING_ENABLED=true
+LANGFUSE_TRACING_ENVIRONMENT=development
+LANGFUSE_CAPTURE_IO=true
 ```
+
+Настоящий ключ хранится только в локальном `.env`. Этот файл уже добавлен в `.gitignore`, поэтому он не должен попадать в репозиторий. Для Vercel или другого хостинга ключ нужно добавлять в Environment Variables, а не загружать `.env` в проект.
+
+Langfuse собирает трассы backend-запросов `/api/*`, RAG-поиска, LLM-вызовов и embeddings. Для приватности секреты и API-ключи автоматически редактируются перед отправкой в Langfuse. Если не нужно сохранять тексты запросов и ответов в Langfuse Cloud, установите `LANGFUSE_CAPTURE_IO=false`.
 
 Запуск сервера:
 
@@ -64,7 +77,7 @@ http://127.0.0.1:8000
 - Build Command: оставить пустым.
 - Output Directory: оставить пустым.
 - Install Command: `pip install -r requirements.txt`.
-- Environment Variables: добавить `OPENAI_API_KEY` и при необходимости `CHAT_MODEL`, `EMBEDDING_MODEL`.
+- Environment Variables: добавить `GEMINI_API_KEY`, `LANGFUSE_SECRET_KEY`, `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_BASE_URL`, `LANGFUSE_TRACING_ENABLED=true`, `LANGFUSE_TRACING_ENVIRONMENT=production` и при необходимости `LLM_BASE_URL`, `CHAT_MODEL`, `EMBEDDING_MODEL`.
 
 На Vercel runtime-файлы SQLite, ChromaDB и загруженные материалы пишутся во временную директорию `/tmp`. Это подходит для демо MVP, но не для постоянного хранения: после cold start данные могут быть пересозданы. Для production-версии нужна внешняя БД и отдельное хранилище файлов.
 
@@ -77,7 +90,7 @@ http://127.0.0.1:8000
 
 Чтобы ограничить расход embeddings, по умолчанию индексируется не больше `RAG_MAX_CHUNKS_PER_SOURCE=24` фрагментов на источник. Значение можно увеличить в `.env`.
 
-Если `OPENAI_API_KEY` не задан, `ReIndex` все равно скачает источники, извлечет текст, нарежет chunks и включит keyword-поиск без расхода токенов. После добавления ключа повторный `ReIndex` создаст полноценный векторный индекс.
+Если `GEMINI_API_KEY` не задан, `ReIndex` все равно скачает источники, извлечет текст, нарежет chunks и включит keyword-поиск без расхода токенов. После добавления ключа повторный `ReIndex` создаст полноценный векторный индекс.
 
 Если источник недоступен или содержит только короткую metadata-страницу, он получает статус `unavailable` или `metadata_only` и не используется как прочитанный материал в ответах агента.
 

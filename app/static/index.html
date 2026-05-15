@@ -5,10 +5,64 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>AI Sound Design Assistant</title>
     <link rel="icon" type="image/svg+xml" href="/static/herzen.svg" />
-    <link rel="stylesheet" href="/static/styles.css" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260515-user-panel-bottom-v20" />
     <script src="/static/lucide.min.js" defer></script>
   </head>
   <body>
+    <!-- Auth overlay: shown when not authenticated -->
+    <div id="authOverlay" class="auth-overlay" aria-hidden="true">
+      <div class="auth-card">
+        <div class="auth-brand">
+          <img src="/static/herzen.svg" alt="РГПУ им. А. И. Герцена" class="auth-logo" />
+          <div>
+            <h1>AI Sound Design</h1>
+            <p>Учебный AI-агент-наставник</p>
+          </div>
+        </div>
+
+        <div class="auth-tabs">
+          <button type="button" class="auth-tab active" data-auth-mode="login">Вход</button>
+          <button type="button" class="auth-tab" data-auth-mode="register">Регистрация</button>
+        </div>
+
+        <form id="loginForm" class="auth-form active">
+          <label class="auth-field">
+            <span>Email</span>
+            <input type="email" name="email" autocomplete="username" required />
+          </label>
+          <label class="auth-field">
+            <span>Пароль</span>
+            <input type="password" name="password" autocomplete="current-password" required minlength="6" />
+          </label>
+          <div class="auth-error" id="loginError" hidden></div>
+          <button type="submit" class="auth-submit">Войти</button>
+        </form>
+
+        <form id="registerForm" class="auth-form">
+          <label class="auth-field">
+            <span>Код приглашения</span>
+            <input type="text" name="invite_code" placeholder="Например, AB12CD34" required />
+            <small>Получите код у преподавателя или администратора</small>
+          </label>
+          <label class="auth-field">
+            <span>Email</span>
+            <input type="email" name="email" autocomplete="username" required />
+          </label>
+          <label class="auth-field">
+            <span>Имя (необязательно)</span>
+            <input type="text" name="display_name" autocomplete="name" />
+          </label>
+          <label class="auth-field">
+            <span>Пароль</span>
+            <input type="password" name="password" autocomplete="new-password" required minlength="6" />
+            <small>Не короче 6 символов</small>
+          </label>
+          <div class="auth-error" id="registerError" hidden></div>
+          <button type="submit" class="auth-submit">Создать аккаунт</button>
+        </form>
+      </div>
+    </div>
+
     <div class="app-shell">
       <aside class="sidebar">
         <div class="brand">
@@ -24,12 +78,26 @@
             <i data-lucide="square-pen"></i>
             Новый диалог
           </button>
-          <button class="tab" data-tab="materials"><i data-lucide="database"></i>База знаний</button>
+          <button class="tab admin-only" data-tab="materials"><i data-lucide="database"></i>База знаний</button>
+          <button class="tab admin-only" data-tab="admin"><i data-lucide="users"></i>Пользователи</button>
           <button class="tab" data-tab="tools"><i data-lucide="sparkles"></i>Навыки</button>
           <button class="tab" data-tab="courses"><i data-lucide="graduation-cap"></i>Курсы</button>
         </nav>
 
         <div id="sessionsList" class="sessions-list"></div>
+
+        <div id="userPanel" class="user-panel" hidden>
+          <div class="user-info">
+            <div class="user-avatar" id="userAvatar">·</div>
+            <div class="user-meta">
+              <div class="user-email" id="userEmail"></div>
+              <div class="user-role" id="userRole"></div>
+            </div>
+          </div>
+          <button type="button" id="logoutBtn" class="user-logout" aria-label="Выйти">
+            <i data-lucide="log-out"></i>
+          </button>
+        </div>
       </aside>
 
       <main class="workspace">
@@ -41,12 +109,30 @@
             </div>
           </header>
 
+          <div id="imageLightbox" class="image-lightbox" aria-hidden="true" role="dialog">
+            <button id="lightboxCloseBtn" class="image-lightbox-close" type="button" aria-label="Закрыть">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
+                <line x1="6" y1="6" x2="18" y2="18"/>
+                <line x1="18" y1="6" x2="6" y2="18"/>
+              </svg>
+            </button>
+            <img id="lightboxImage" alt="Просмотр изображения" />
+          </div>
+
+          <div id="dropOverlay" class="drop-overlay" aria-hidden="true">
+            <div class="drop-overlay-inner">
+              <i data-lucide="image-up"></i>
+              <div class="drop-overlay-title">Перетащите изображение сюда</div>
+              <div class="drop-overlay-subtitle">Добавьте файл к сообщению</div>
+            </div>
+          </div>
+
           <div id="messages" class="messages"></div>
 
           <form id="chatForm" class="composer">
             <div class="composer-inner">
               <div id="attachedImages" class="attached-images"></div>
-              <textarea id="messageInput" rows="2" placeholder="Опиши, что не получается со звуком: глухо, резко, не играет MIDI или потерялся эффект"></textarea>
+              <textarea id="messageInput" rows="2" placeholder="Напишите ваш вопрос"></textarea>
               <div class="composer-actions">
                 <div class="attach-wrap">
                   <button id="attachMenuBtn" type="button" class="attach-button" aria-label="Добавить файлы"><i data-lucide="plus"></i></button>
@@ -122,7 +208,7 @@
               <div>
                 <span class="hero-kicker">Агент-методист</span>
                 <h2>Маршрут освоения саунд-дизайна</h2>
-                <p>Курсы разбиты на короткие модули: теория, действие в Ableton Live, самопроверка и рефлексия. Отмечай выполненные шаги, чтобы видеть траекторию подготовки.</p>
+                <p>Курсы разбиты на короткие модули: теория, действие в Ableton Live, самопроверка и рефлексия. Отмечайте выполненные шаги, чтобы видеть траекторию подготовки.</p>
               </div>
               <div class="hero-stats">
                 <div>
@@ -149,7 +235,92 @@
           </header>
           <div id="toolsList" class="tools-grid"></div>
         </section>
+
+        <section id="adminTab" class="panel">
+          <header class="panel-header">
+            <div>
+              <h2>Пользователи и приглашения</h2>
+              <p>Управление доступом: создавайте инвайт-коды и назначайте роли.</p>
+            </div>
+            <div class="header-actions">
+              <button id="createInviteBtn" class="primary-button" type="button"><i data-lucide="plus"></i>Новый код</button>
+            </div>
+          </header>
+          <div class="admin-grid">
+            <div>
+              <h3 class="admin-section-title">Активные инвайт-коды</h3>
+              <div id="invitesList" class="invites-list"></div>
+            </div>
+            <div>
+              <h3 class="admin-section-title">Зарегистрированные пользователи</h3>
+              <div id="usersList" class="users-list"></div>
+            </div>
+          </div>
+        </section>
       </main>
+    </div>
+
+    <div id="inviteModal" class="modal-backdrop" aria-hidden="true">
+      <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="inviteModalTitle">
+        <div class="modal-head">
+          <h2 id="inviteModalTitle">Новый инвайт-код</h2>
+          <button id="closeInviteModalBtn" class="modal-close" type="button" aria-label="Закрыть"><i data-lucide="x"></i></button>
+        </div>
+        <form id="inviteForm" class="modal-form">
+          <label>
+            <span>Роль</span>
+            <select name="role">
+              <option value="user" selected>Пользователь</option>
+              <option value="admin">Администратор</option>
+            </select>
+          </label>
+          <label>
+            <span>Максимум использований</span>
+            <input type="number" name="max_uses" value="1" min="1" max="100" required />
+            <small>1 = одноразовый. Для комиссии можно поставить 5-10.</small>
+          </label>
+          <label>
+            <span>Заметка (необязательно)</span>
+            <input type="text" name="note" placeholder="Например: для комиссии ВКР" />
+          </label>
+          <div class="modal-actions">
+            <button type="button" class="secondary-button" id="cancelInviteModalBtn">Отмена</button>
+            <button type="submit" class="primary-button">Создать</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div id="reindexModal" class="modal-backdrop" aria-hidden="true">
+      <div class="modal-card reindex-card" role="dialog" aria-modal="true" aria-labelledby="reindexModalTitle">
+        <div class="modal-head">
+          <div>
+            <h2 id="reindexModalTitle">Переиндексация базы знаний</h2>
+            <p>Выберите, какие материалы нужно обработать сейчас.</p>
+          </div>
+          <button id="closeReindexModalBtn" class="modal-close" type="button" aria-label="Закрыть"><i data-lucide="x"></i></button>
+        </div>
+        <div class="reindex-options" role="group" aria-label="Режим переиндексации">
+          <button class="reindex-option selected" type="button" data-reindex-mode="new">
+            <span class="option-kicker">Быстрый режим</span>
+            <strong>Только новые источники</strong>
+            <span>Обработает материалы со статусом «Ожидает индексации». Уже готовые карточки не трогаются.</span>
+          </button>
+          <button class="reindex-option warning" type="button" data-reindex-mode="all">
+            <span class="option-kicker">Полная пересборка</span>
+            <strong>Переиндексировать все</strong>
+            <span>Заново обработает всю базу знаний и обновит векторный индекс. Может занять больше времени.</span>
+          </button>
+        </div>
+        <div class="reindex-footnote">
+          <span class="status-dot ok"></span>
+          <span>Рекомендуемый режим: «Только новые источники». Полную пересборку используйте после крупных изменений базы.</span>
+        </div>
+        <div class="modal-actions reindex-actions">
+          <button class="secondary-button" type="button" id="cancelReindexModalBtn">Отмена</button>
+          <button class="primary-button" type="button" id="runReindexBtn">Запустить</button>
+        </div>
+      </div>
     </div>
 
     <div id="sourceModal" class="modal-backdrop" aria-hidden="true">
@@ -228,6 +399,6 @@
       </div>
     </div>
 
-    <script src="/static/app.js"></script>
+    <script src="/static/app.js?v=20260515-auth-v19"></script>
   </body>
 </html>

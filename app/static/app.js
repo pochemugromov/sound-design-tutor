@@ -1,8 +1,10 @@
 const state = {
   currentSessionId: null,
   isDraftChat: true,
-  imagePaths: [],
+  attachedImages: [],
   materials: [],
+  reindexMode: "new",
+  currentUser: null,
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -20,20 +22,35 @@ const sourceCategories = [
   "Учебные материалы",
   "Курс",
 ];
+const materialStatuses = [
+  { value: "indexed", label: "Проиндексирован" },
+  { value: "prepared", label: "Подготовлен" },
+  { value: "pending", label: "Ожидает индексации" },
+  { value: "metadata_only", label: "Только метаданные" },
+  { value: "unavailable", label: "Недоступен" },
+];
+const materialStatusLabels = Object.fromEntries(materialStatuses.map((status) => [status.value, status.label]));
+const materialStatusOrder = Object.fromEntries(materialStatuses.map((status, index) => [status.value, index + 1]));
 
 const chatPlaceholders = [
-  "Опиши, что не получается со звуком: глухо, резко, не играет MIDI или потерялся эффект",
-  "Спроси, где в Ableton Live искать Browser, Mixer, Sends, Automation и Detail View",
-  "Напиши ошибку Ableton дословно: помогу понять, что она означает и куда смотреть",
-  "Спроси, как записать MIDI, аудио или автоматизацию без хаоса в проекте",
-  "Спроси, почему бас пропадает в миксе или синт звучит слишком тонко",
+  "Опишите, что не получается со звуком: глухо, резко, не играет MIDI или потерялся эффект",
+  "Спросите, где в Ableton Live искать Browser, Mixer, Sends, Automation и Detail View",
+  "Напишите ошибку Ableton дословно: помогу понять, что она означает и куда смотреть",
+  "Спросите, как записать MIDI, аудио или автоматизацию без хаоса в проекте",
+  "Спросите, почему бас пропадает в миксе или синт звучит слишком тонко",
   "Разберем маршрут сигнала: Audio From, Monitor, Track Activator, Solo и Master",
-  "Напиши, какой звук хочешь собрать: плотный лид, мягкий pad, ударный бас или атмосферный шум",
-  "Разбери проблему как в студии: что сделал, что ожидал услышать и что получилось",
-  "Попроси объяснить Ableton без магии: клипы, дорожки, эффекты, routing и automation",
+  "Напишите, какой звук Вы хотите собрать: плотный лид, мягкий pad, ударный бас или атмосферный шум",
+  "Разберите проблему как в студии: что Вы сделали, что Вы ожидали услышать и что получилось",
+  "Попросите объяснить Ableton без магии: клипы, дорожки, эффекты, routing и automation",
   "Где найти Soundgoodizer в Ableton Live?",
-  "Загрузи скрин или опиши цепочку эффектов, если звук ведет себя странно",
+  "Загрузите скрин или опишите цепочку эффектов, если звук ведет себя странно",
 ];
+const defaultChatPlaceholder = "Напишите ваш вопрос";
+const placeholderState = {
+  rotationTimer: null,
+  typingTimer: null,
+  index: 0,
+};
 
 const courses = [
   {
@@ -84,12 +101,101 @@ function escapeHtml(value = "") {
   return String(value)
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;");
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+const IMAGE_NOTE_STRIP_RE = /\s*\n*\s*\[Прикрепленные изображения:[\s\S]*$/;
+const IMAGE_NOTE_EXTRACT_RE = /\[Прикрепленные изображения:\s*([\s\S]*?)(?:\]|$)/;
+
+function stripImageNote(text = "") {
+  return String(text).replace(IMAGE_NOTE_STRIP_RE, "").trim();
+}
+
+function extractImagePaths(text = "") {
+  const match = String(text).match(IMAGE_NOTE_EXTRACT_RE);
+  if (!match) return [];
+  return match[1].split(",").map((p) => p.trim()).filter(Boolean);
+}
+
+function imagePathToUrl(path) {
+  if (!path) return null;
+  const normalized = path.replace(/\\/g, "/");
+  const idx = normalized.indexOf("uploads/");
+  if (idx !== -1) return "/" + normalized.slice(idx);
+  const name = normalized.split("/").pop();
+  return name ? `/uploads/images/${name}` : null;
+}
+
+function formatInlineMarkdown(text = "") {
+  return escapeHtml(text)
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+}
+
+function renderAssistantMarkdown(content = "") {
+  const lines = String(content).replace(/\r\n/g, "\n").split("\n");
+  const html = [];
+  let listType = null;
+
+  const closeList = () => {
+    if (!listType) return;
+    html.push(`</${listType}>`);
+    listType = null;
+  };
+
+  const openList = (type) => {
+    if (listType === type) return;
+    closeList();
+    listType = type;
+    html.push(`<${type}>`);
+  };
+
+  lines.forEach((line) => {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      closeList();
+      return;
+    }
+
+    const heading = trimmed.match(/^(#{1,3})\s+(.+)$/);
+    if (heading) {
+      closeList();
+      const level = Math.min(heading[1].length + 2, 4);
+      html.push(`<h${level}>${formatInlineMarkdown(heading[2])}</h${level}>`);
+      return;
+    }
+
+    const ordered = trimmed.match(/^\d+\.\s+(.+)$/);
+    if (ordered) {
+      openList("ol");
+      html.push(`<li>${formatInlineMarkdown(ordered[1])}</li>`);
+      return;
+    }
+
+    const unordered = trimmed.match(/^[-*]\s+(.+)$/);
+    if (unordered) {
+      openList("ul");
+      html.push(`<li>${formatInlineMarkdown(unordered[1])}</li>`);
+      return;
+    }
+
+    closeList();
+    html.push(`<p>${formatInlineMarkdown(trimmed)}</p>`);
+  });
+
+  closeList();
+  return html.join("");
 }
 
 async function api(path, options = {}) {
   const headers = options.body instanceof FormData ? options.headers || {} : { "Content-Type": "application/json", ...(options.headers || {}) };
-  const response = await fetch(path, { headers, ...options });
+  const response = await fetch(path, { credentials: "same-origin", headers, ...options });
+  if (response.status === 401 && !path.startsWith("/api/auth/")) {
+    showAuthOverlay();
+    throw new Error("Требуется вход в систему.");
+  }
   if (!response.ok) {
     let detail = await response.text();
     try {
@@ -101,7 +207,8 @@ async function api(path, options = {}) {
 }
 
 function setActiveTab(tabName) {
-  document.querySelectorAll(".tab").forEach((item) => item.classList.toggle("active", item.dataset.tab === tabName));
+  document.querySelectorAll(".tab:not(#newSessionBtn)").forEach((item) => item.classList.toggle("active", item.dataset.tab === tabName));
+  $("#newSessionBtn").classList.toggle("active", tabName === "chat" && state.isDraftChat);
   document.querySelectorAll(".panel").forEach((item) => item.classList.remove("active-panel"));
   $(`#${tabName}Tab`).classList.add("active-panel");
   localStorage.setItem("activeTab", tabName);
@@ -110,12 +217,14 @@ function setActiveTab(tabName) {
 function startDraftChat() {
   state.currentSessionId = null;
   state.isDraftChat = true;
-  state.imagePaths = [];
+  clearAttachedImages();
+  localStorage.removeItem("lastSessionId");
   $("#chatTitle").textContent = "Новый диалог";
   renderAttachedImages();
   renderEmptyState();
   setActiveTab("chat");
   loadSessions();
+  startChatPlaceholderRotation();
   setTimeout(() => $("#messageInput").focus(), 0);
 }
 
@@ -124,30 +233,107 @@ function renderEmptyState() {
     <div class="empty-state">
       <img src="/static/herzen.svg" alt="" />
       <h2>Чем помочь в Ableton Live?</h2>
-      <p>Опиши затруднение: интерфейс, MIDI, эффекты, обработка звука или проверка результата.</p>
+      <p>Опишите затруднение: интерфейс, MIDI, эффекты, обработка звука или проверка результата.</p>
     </div>
   `;
 }
 
-function renderMessage(role, content, citations = []) {
+function isKnowledgeWarning(content, kind = "") {
+  return kind === "knowledge-warning" || content.startsWith("Пока не нашел достаточно релевантных материалов");
+}
+
+function inlineCitations(html, citations) {
+  if (!citations.length) return html;
+  return html.replace(/\[(\d+)\]/g, (match, n) => {
+    const idx = parseInt(n, 10) - 1;
+    const c = citations[idx];
+    if (!c) return match;
+    const tooltip = escapeHtml(c.title) + (c.page_number ? ` · стр. ${c.page_number}` : "");
+    return `<sup class="cite-ref"><a href="${escapeHtml(c.url)}" target="_blank" rel="noreferrer" title="${tooltip}">[${n}]</a></sup>`;
+  });
+}
+
+function renderMessageImages(images) {
+  if (!images || !images.length) return "";
+  const tiles = images
+    .map(
+      (img, idx) =>
+        `<button type="button" class="message-image-thumb" data-image-index="${idx}" aria-label="Открыть изображение">
+          <img src="${escapeHtml(img.url)}" alt="" draggable="false" onerror="this.closest('.message-image-thumb').classList.add('image-broken')" />
+        </button>`
+    )
+    .join("");
+  return `<div class="message-images">${tiles}</div>`;
+}
+
+function renderMessage(role, content, citations = [], kind = "", images = []) {
   const empty = document.querySelector(".empty-state");
   if (empty) empty.remove();
   const item = document.createElement("article");
-  item.className = `message ${role}`;
-  item.innerHTML = `<div class="message-bubble">${escapeHtml(content)}</div>`;
-  if (citations.length) {
-    const citationsEl = document.createElement("div");
-    citationsEl.className = "citations";
-    citationsEl.innerHTML = citations
-      .map(
-        (citation) =>
-          `<a href="${escapeHtml(citation.url)}" target="_blank" rel="noreferrer">${escapeHtml(citation.title)}</a>`,
-      )
-      .join("");
-    item.appendChild(citationsEl);
+  item.className = `message ${role}${isKnowledgeWarning(content, kind) ? " knowledge-warning" : ""}`;
+  const imagesHtml = renderMessageImages(images);
+  const trimmed = (content || "").trim();
+  let bubbleHtml = "";
+  if (trimmed || role === "assistant") {
+    const bubbleContent = role === "assistant"
+      ? inlineCitations(renderAssistantMarkdown(content), citations)
+      : escapeHtml(content);
+    bubbleHtml = `<div class="message-bubble">${bubbleContent}</div>`;
+  }
+  item.innerHTML = `${imagesHtml}${bubbleHtml}`;
+  if (images && images.length) {
+    const urls = images.map((img) => img.url);
+    item.querySelectorAll(".message-image-thumb").forEach((thumb, idx) => {
+      thumb.addEventListener("click", () => openLightbox(urls, idx));
+    });
   }
   messagesEl.appendChild(item);
   messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+function openLightbox(urls, startIndex = 0) {
+  if (!urls || !urls.length) return;
+  const modal = $("#imageLightbox");
+  const img = $("#lightboxImage");
+  img.src = urls[startIndex] || "";
+  modal.classList.add("open");
+  modal.setAttribute("aria-hidden", "false");
+  document.body.classList.add("body-no-scroll");
+}
+
+function closeLightbox() {
+  const modal = $("#imageLightbox");
+  modal.classList.remove("open");
+  modal.setAttribute("aria-hidden", "true");
+  $("#lightboxImage").src = "";
+  document.body.classList.remove("body-no-scroll");
+}
+
+function bindLightbox() {
+  const modal = $("#imageLightbox");
+  $("#lightboxCloseBtn").addEventListener("click", closeLightbox);
+  modal.addEventListener("click", (e) => {
+    if (e.target === modal) closeLightbox();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && modal.classList.contains("open")) closeLightbox();
+  });
+}
+
+function renderAssistantLoading() {
+  const empty = document.querySelector(".empty-state");
+  if (empty) empty.remove();
+  const item = document.createElement("article");
+  item.className = "message assistant message-loading";
+  item.innerHTML = `
+    <div class="message-bubble loading-bubble" aria-live="polite">
+      <span class="thinking-wave" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></span>
+      <span class="loading-text">Готовлю ответ с учетом базы знаний</span>
+    </div>
+  `;
+  messagesEl.appendChild(item);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+  return item;
 }
 
 async function loadHealth() {
@@ -163,14 +349,17 @@ async function loadSessions() {
   sessions.forEach((session) => {
     const item = document.createElement("div");
     item.className = `session-item ${session.id === state.currentSessionId ? "active" : ""}`;
+    const cleanTitle = stripImageNote(session.title) || "Прикрепленные файлы";
     item.innerHTML = `
       <div>
-        <div class="session-title">${escapeHtml(session.title)}</div>
+        <div class="session-title">${escapeHtml(cleanTitle)}</div>
         <div class="session-meta">${session.messages_count} сообщений</div>
       </div>
-      <button class="delete-session" title="Удалить диалог" aria-label="Удалить диалог">×</button>
+      <button class="delete-session" title="Удалить диалог" aria-label="Удалить диалог">
+        <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="4" x2="12" y2="12"/><line x1="12" y1="4" x2="4" y2="12"/></svg>
+      </button>
     `;
-    item.addEventListener("click", () => openSession(session.id, session.title));
+    item.addEventListener("click", () => openSession(session.id, cleanTitle));
     item.querySelector(".delete-session").addEventListener("click", (event) => {
       event.stopPropagation();
       deleteSession(session.id);
@@ -183,11 +372,27 @@ async function loadSessions() {
 async function openSession(sessionId, title = "Диалог") {
   state.currentSessionId = sessionId;
   state.isDraftChat = false;
-  $("#chatTitle").textContent = title || "Диалог";
+  stopChatPlaceholderRotation();
+  localStorage.setItem("lastSessionId", sessionId);
+  $("#chatTitle").textContent = stripImageNote(title) || "Диалог";
   messagesEl.innerHTML = "";
   const messages = await api(`/api/sessions/${sessionId}/messages`);
   if (messages.length) {
-    messages.forEach((message) => renderMessage(message.role, message.content, message.citations || []));
+    messages.forEach((message) => {
+      let images = (message.image_urls || []).map((url) => ({ url, name: "" }));
+      let content = message.content || "";
+      if (message.role === "user") {
+        if (!images.length) {
+          const fallbackPaths = extractImagePaths(content);
+          images = fallbackPaths
+            .map((p) => imagePathToUrl(p))
+            .filter(Boolean)
+            .map((url) => ({ url, name: "" }));
+        }
+        content = stripImageNote(content);
+      }
+      renderMessage(message.role, content, message.citations || [], "", images);
+    });
   } else {
     renderEmptyState();
   }
@@ -198,6 +403,7 @@ async function openSession(sessionId, title = "Диалог") {
 async function deleteSession(sessionId) {
   if (!confirm("Удалить этот диалог?")) return;
   await api(`/api/sessions/${sessionId}`, { method: "DELETE" });
+  if (localStorage.getItem("lastSessionId") === sessionId) localStorage.removeItem("lastSessionId");
   if (state.currentSessionId === sessionId) startDraftChat();
   await loadSessions();
 }
@@ -206,24 +412,50 @@ async function sendMessage(event) {
   event.preventDefault();
   const input = $("#messageInput");
   const message = input.value.trim();
-  if (!message) return;
+  const hasImages = state.attachedImages.length > 0;
+  if (!message && !hasImages) return;
+  if (state.attachedImages.some((img) => img.uploading)) {
+    return;
+  }
+  stopChatPlaceholderRotation();
+
+  const sentImages = state.attachedImages.map((img) => ({
+    url: img.blobUrl,
+    name: img.name,
+    path: img.path,
+  }));
+  const imagePaths = sentImages.map((img) => img.path).filter(Boolean);
+
+  state.attachedImages = [];
+  renderAttachedImages();
   input.value = "";
   resizeComposer(input);
-  renderMessage("user", message);
-  const result = await api("/api/chat", {
-    method: "POST",
-    body: JSON.stringify({
-      session_id: state.currentSessionId,
-      message,
-      image_paths: state.imagePaths,
-    }),
-  });
+
+  renderMessage("user", message, [], "", sentImages);
+  const loadingMessage = renderAssistantLoading();
+
+  let result;
+  try {
+    result = await api("/api/chat", {
+      method: "POST",
+      body: JSON.stringify({
+        session_id: state.currentSessionId,
+        message,
+        image_paths: imagePaths,
+      }),
+    });
+  } catch (error) {
+    loadingMessage.remove();
+    renderMessage("assistant", `Не удалось получить ответ.\n\n**Причина:** ${error.message}`, [], "knowledge-warning");
+    return;
+  }
+  loadingMessage.remove();
   state.currentSessionId = result.session_id;
   state.isDraftChat = false;
-  state.imagePaths = [];
-  $("#chatTitle").textContent = message.slice(0, 80);
-  renderAttachedImages();
-  renderMessage("assistant", result.answer, result.citations || []);
+  localStorage.setItem("lastSessionId", result.session_id);
+  const titleSource = result.title || stripImageNote(message) || (sentImages.length ? "Прикрепленные файлы" : "");
+  if (titleSource) $("#chatTitle").textContent = titleSource.slice(0, 80);
+  renderMessage("assistant", result.answer, result.citations || [], result.kind);
   await loadSessions();
 }
 
@@ -240,55 +472,200 @@ function handleComposerKeydown(event) {
   event.currentTarget.form.requestSubmit();
 }
 
-function rotateChatPlaceholder() {
+function shouldRotateChatPlaceholder() {
+  return state.isDraftChat && !state.currentSessionId && !document.querySelector(".message");
+}
+
+function stopChatPlaceholderRotation() {
+  clearInterval(placeholderState.rotationTimer);
+  clearInterval(placeholderState.typingTimer);
+  placeholderState.rotationTimer = null;
+  placeholderState.typingTimer = null;
   const input = $("#messageInput");
-  let index = 0;
-  let typingTimer = null;
+  if (input) input.placeholder = defaultChatPlaceholder;
+}
+
+function startChatPlaceholderRotation() {
+  const input = $("#messageInput");
+  if (!input) return;
+  stopChatPlaceholderRotation();
+  if (!shouldRotateChatPlaceholder()) return;
+  placeholderState.index = 0;
 
   const typePlaceholder = (text) => {
-    clearInterval(typingTimer);
+    clearInterval(placeholderState.typingTimer);
     input.placeholder = "";
     let charIndex = 0;
-    typingTimer = setInterval(() => {
-      if (input.value.trim()) {
-        clearInterval(typingTimer);
+    placeholderState.typingTimer = setInterval(() => {
+      if (!shouldRotateChatPlaceholder() || input.value.trim()) {
+        stopChatPlaceholderRotation();
         return;
       }
       input.placeholder = text.slice(0, charIndex + 1);
       charIndex += 1;
-      if (charIndex >= text.length) clearInterval(typingTimer);
+      if (charIndex >= text.length) clearInterval(placeholderState.typingTimer);
     }, 28);
   };
 
-  typePlaceholder(chatPlaceholders[index]);
-  setInterval(() => {
-    if (input.value.trim()) return;
-    index = (index + 1) % chatPlaceholders.length;
-    typePlaceholder(chatPlaceholders[index]);
+  typePlaceholder(chatPlaceholders[placeholderState.index]);
+  placeholderState.rotationTimer = setInterval(() => {
+    if (!shouldRotateChatPlaceholder() || input.value.trim()) {
+      stopChatPlaceholderRotation();
+      return;
+    }
+    placeholderState.index = (placeholderState.index + 1) % chatPlaceholders.length;
+    typePlaceholder(chatPlaceholders[placeholderState.index]);
   }, 5000);
 }
 
+function clearAttachedImages() {
+  state.attachedImages.forEach((img) => {
+    if (img.blobUrl) URL.revokeObjectURL(img.blobUrl);
+  });
+  state.attachedImages = [];
+  renderAttachedImages();
+}
+
+function removeAttachedImage(id) {
+  const idx = state.attachedImages.findIndex((img) => img.id === id);
+  if (idx === -1) return;
+  const [removed] = state.attachedImages.splice(idx, 1);
+  if (removed.blobUrl) URL.revokeObjectURL(removed.blobUrl);
+  renderAttachedImages();
+}
+
+function reorderAttachedImage(fromId, toId) {
+  if (!fromId || fromId === toId) return;
+  const fromIdx = state.attachedImages.findIndex((img) => img.id === fromId);
+  const toIdx = state.attachedImages.findIndex((img) => img.id === toId);
+  if (fromIdx === -1 || toIdx === -1) return;
+  const [moved] = state.attachedImages.splice(fromIdx, 1);
+  state.attachedImages.splice(toIdx, 0, moved);
+  renderAttachedImages();
+}
+
 function renderAttachedImages() {
-  $("#attachedImages").innerHTML = state.imagePaths
-    .map((path) => `<span class="image-chip">${escapeHtml(path)}</span>`)
-    .join("");
+  const container = $("#attachedImages");
+  container.innerHTML = "";
+  state.attachedImages.forEach((img) => {
+    const chip = document.createElement("div");
+    chip.className = "image-chip" + (img.uploading ? " uploading" : "");
+    chip.draggable = true;
+    chip.dataset.id = img.id;
+    chip.innerHTML = `
+      <img src="${img.blobUrl}" alt="${escapeHtml(img.name)}" draggable="false" />
+      ${img.uploading ? '<div class="image-chip-spinner"></div>' : ''}
+      <button type="button" class="image-chip-remove" aria-label="Удалить">
+        <svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
+          <line x1="4" y1="4" x2="12" y2="12"/>
+          <line x1="12" y1="4" x2="4" y2="12"/>
+        </svg>
+      </button>
+    `;
+    chip.querySelector(".image-chip-remove").addEventListener("click", (e) => {
+      e.stopPropagation();
+      removeAttachedImage(img.id);
+    });
+    chip.addEventListener("dragstart", (e) => {
+      chip.classList.add("dragging");
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("application/x-image-chip", img.id);
+    });
+    chip.addEventListener("dragend", () => chip.classList.remove("dragging"));
+    chip.addEventListener("dragover", (e) => {
+      if (!Array.from(e.dataTransfer.types || []).includes("application/x-image-chip")) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      chip.classList.add("drop-target");
+    });
+    chip.addEventListener("dragleave", () => chip.classList.remove("drop-target"));
+    chip.addEventListener("drop", (e) => {
+      const draggedId = e.dataTransfer.getData("application/x-image-chip");
+      if (!draggedId) return;
+      e.preventDefault();
+      e.stopPropagation();
+      chip.classList.remove("drop-target");
+      reorderAttachedImage(draggedId, img.id);
+    });
+    container.appendChild(chip);
+  });
+}
+
+async function attachImageFile(file) {
+  if (!file || !file.type || !file.type.startsWith("image/")) return;
+  const id = `img-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const entry = {
+    id,
+    name: file.name || "image.png",
+    blobUrl: URL.createObjectURL(file),
+    path: null,
+    uploading: true,
+  };
+  state.attachedImages.push(entry);
+  renderAttachedImages();
+  try {
+    const formData = new FormData();
+    formData.append("file", file, entry.name);
+    const response = await fetch("/api/uploads/images", { method: "POST", body: formData });
+    if (!response.ok) throw new Error("upload failed");
+    const result = await response.json();
+    entry.path = result.path;
+    entry.name = result.name || entry.name;
+    entry.uploading = false;
+    renderAttachedImages();
+  } catch (err) {
+    removeAttachedImage(id);
+    alert("Не удалось загрузить изображение");
+  }
 }
 
 async function uploadImage(event) {
-  const file = event.target.files[0];
-  if (!file) return;
-  const formData = new FormData();
-  formData.append("file", file);
-  const response = await fetch("/api/uploads/images", { method: "POST", body: formData });
-  if (!response.ok) {
-    alert("Не удалось загрузить изображение");
-    return;
-  }
-  const result = await response.json();
-  state.imagePaths.push(result.path);
-  renderAttachedImages();
+  const files = Array.from(event.target.files || []);
+  for (const file of files) await attachImageFile(file);
   event.target.value = "";
   $("#attachMenu").classList.remove("open");
+}
+
+function bindImagePaste() {
+  $("#messageInput").addEventListener("paste", (event) => {
+    const items = Array.from(event.clipboardData?.items || []);
+    const imageItems = items.filter((it) => it.kind === "file" && it.type.startsWith("image/"));
+    if (!imageItems.length) return;
+    event.preventDefault();
+    imageItems.forEach((it) => {
+      const file = it.getAsFile();
+      if (file) attachImageFile(file);
+    });
+  });
+}
+
+function bindImageDrop() {
+  const overlay = $("#dropOverlay");
+  let dragDepth = 0;
+  const hasFiles = (e) => Array.from(e.dataTransfer?.types || []).includes("Files");
+  window.addEventListener("dragenter", (e) => {
+    if (!hasFiles(e)) return;
+    dragDepth++;
+    overlay.classList.add("active");
+  });
+  window.addEventListener("dragleave", (e) => {
+    if (!hasFiles(e)) return;
+    dragDepth = Math.max(0, dragDepth - 1);
+    if (dragDepth === 0) overlay.classList.remove("active");
+  });
+  window.addEventListener("dragover", (e) => {
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+  });
+  window.addEventListener("drop", (e) => {
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    dragDepth = 0;
+    overlay.classList.remove("active");
+    const files = Array.from(e.dataTransfer.files || []).filter((f) => f.type.startsWith("image/"));
+    files.forEach(attachImageFile);
+  });
 }
 
 function uniqueValues(key) {
@@ -303,6 +680,19 @@ function fillSelectOptions(select, values, current) {
     const option = document.createElement("option");
     option.value = value;
     option.textContent = value;
+    option.selected = value === current;
+    select.appendChild(option);
+  });
+}
+
+function fillMappedSelectOptions(select, options, current) {
+  const first = select.querySelector("option");
+  select.innerHTML = "";
+  select.appendChild(first);
+  options.forEach(({ value, label }) => {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = label;
     option.selected = value === current;
     select.appendChild(option);
   });
@@ -333,7 +723,7 @@ async function refreshMaterials() {
 }
 
 function syncMaterialFilterOptions() {
-  fillSelectOptions($("#statusFilter"), uniqueValues("status"), $("#statusFilter").value);
+  fillMappedSelectOptions($("#statusFilter"), materialStatuses, $("#statusFilter").value);
   fillSelectOptions($("#typeFilter"), sourceCategories, $("#typeFilter").value);
 }
 
@@ -342,7 +732,8 @@ function matchesMaterialFilters(material) {
   const status = $("#statusFilter").value;
   const origin = $("#originFilter").value;
   const type = $("#typeFilter").value;
-  const haystack = `${material.title} ${material.url} ${material.type} ${material.status}`.toLowerCase();
+  const statusLabel = materialStatusLabels[material.status] || material.status;
+  const haystack = `${material.title} ${material.url} ${material.type} ${material.status} ${statusLabel}`.toLowerCase();
   return (!query || haystack.includes(query)) && (!status || material.status === status) && (!origin || material.origin === origin) && (!type || material.type === type);
 }
 
@@ -352,6 +743,7 @@ function createMaterialCard(material) {
   item.dataset.sourceId = material.id;
   const originIcon = material.origin === "manual" ? "book-open" : "globe";
   const originLabel = material.origin === "manual" ? "Manual" : "Web";
+  const statusLabel = materialStatusLabels[material.status] || material.status || "Неизвестный статус";
   const sourceLink =
     material.origin === "manual"
       ? ""
@@ -364,7 +756,7 @@ function createMaterialCard(material) {
       <div>
         <div class="material-title">${escapeHtml(material.title)}</div>
         <div class="material-meta">
-          <span class="status-${material.status}">${escapeHtml(material.status)}</span>
+          <span class="status-${escapeHtml(material.status)}">${escapeHtml(statusLabel)}</span>
           <span class="origin-badge"><i data-lucide="${originIcon}"></i>${originLabel}</span>
           <span>${escapeHtml(material.type)}</span>
           <span>chunks: ${material.chunks_count}</span>
@@ -372,7 +764,9 @@ function createMaterialCard(material) {
       </div>
       <div class="material-actions">
         <button class="edit-material" title="Редактировать источник" aria-label="Редактировать источник"><i data-lucide="pencil"></i></button>
-        <button class="delete-material" title="Удалить источник" aria-label="Удалить источник">×</button>
+        <button class="delete-material" title="Удалить источник" aria-label="Удалить источник">
+          <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="4" x2="12" y2="12"/><line x1="12" y1="4" x2="4" y2="12"/></svg>
+        </button>
       </div>
     </div>
     <div class="material-note">${escapeHtml(material.note || "Описание пока не добавлено.")}</div>
@@ -394,11 +788,10 @@ function flashMaterialCard(sourceId, className) {
 function renderMaterials() {
   const sort = $("#sortMaterials").value;
 
-  const statusOrder = { indexed: 1, prepared: 2, pending: 3, metadata_only: 4, unavailable: 5 };
   let items = state.materials.filter(matchesMaterialFilters);
 
   items.sort((a, b) => {
-    if (sort === "status") return (statusOrder[a.status] || 99) - (statusOrder[b.status] || 99) || a.title.localeCompare(b.title);
+    if (sort === "status") return (materialStatusOrder[a.status] || 99) - (materialStatusOrder[b.status] || 99) || a.title.localeCompare(b.title);
     if (sort === "origin") return a.origin.localeCompare(b.origin) || a.title.localeCompare(b.title);
     if (sort === "chunks") return b.chunks_count - a.chunks_count || a.title.localeCompare(b.title);
     return a.title.localeCompare(b.title);
@@ -457,21 +850,45 @@ async function deleteMaterial(material) {
   $("#reindexStatus").textContent = "Источник удален. При необходимости нажмите «Переиндексировать».";
 }
 
-async function reindex() {
-  const confirmed = confirm("Переиндексация скачает источники и перестроит базу. Без API ключа токены не тратятся, с ключом будут потрачены embeddings-токены. Продолжить?");
-  if (!confirmed) return;
+function openReindexModal() {
+  selectReindexMode(state.reindexMode || "new");
+  $("#reindexModal").classList.add("open");
+  $("#reindexModal").setAttribute("aria-hidden", "false");
+}
+
+function closeReindexModal() {
+  $("#reindexModal").classList.remove("open");
+  $("#reindexModal").setAttribute("aria-hidden", "true");
+}
+
+function selectReindexMode(mode) {
+  state.reindexMode = mode === "all" ? "all" : "new";
+  document.querySelectorAll(".reindex-option").forEach((option) => {
+    option.classList.toggle("selected", option.dataset.reindexMode === state.reindexMode);
+  });
+  const runButton = $("#runReindexBtn");
+  if (runButton) {
+    runButton.textContent = state.reindexMode === "all" ? "Переиндексировать все" : "Индексировать новые";
+    runButton.classList.toggle("warning-button", state.reindexMode === "all");
+    runButton.classList.toggle("primary-button", state.reindexMode !== "all");
+  }
+}
+
+async function reindex(mode = "all") {
+  closeReindexModal();
   const button = $("#reindexBtn");
   const status = $("#reindexStatus");
+  const modeLabel = mode === "new" ? "новых источников" : "всех источников";
   button.disabled = true;
   button.classList.add("loading");
   status.className = "status-line status-working";
-  status.innerHTML = '<span class="status-spinner"></span><span>Переиндексация запущена. Скачиваю источники, читаю PDF и обновляю базу поиска...</span>';
+  status.innerHTML = `<span class="status-spinner"></span><span>Переиндексация ${modeLabel} запущена. Скачиваю источники, читаю PDF и обновляю базу поиска...</span>`;
   try {
-    const result = await api("/api/reindex", { method: "POST" });
+    const result = await api("/api/reindex", { method: "POST", body: JSON.stringify({ mode }) });
     status.className = "status-line status-success";
     status.innerHTML = `
       <span class="status-dot ok"></span>
-      <span>${escapeHtml(result.message)} Готово: ${result.prepared}, vector: ${result.indexed}, metadata: ${result.metadata_only}, недоступно: ${result.unavailable}.</span>
+      <span>${escapeHtml(result.message)} Подготовлено: ${result.prepared}, vector: ${result.indexed}, только метаданные: ${result.metadata_only}, недоступно: ${result.unavailable}, пропущено: ${result.skipped || 0}.</span>
     `;
     materialsListEl.classList.remove("just-refreshed");
     void materialsListEl.offsetWidth;
@@ -602,6 +1019,7 @@ function bindTabs() {
       if (tab.dataset.tab === "materials") loadMaterials();
       if (tab.dataset.tab === "courses") renderCourses();
       if (tab.dataset.tab === "tools") loadTools();
+      if (tab.dataset.tab === "admin") { loadInvites(); loadAdminUsers(); }
     });
   });
 }
@@ -656,7 +1074,22 @@ function bindSourceModal() {
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") closeSourceModal();
     if (event.key === "Escape") closeEditSourceModal();
+    if (event.key === "Escape") closeReindexModal();
   });
+}
+
+function bindReindexModal() {
+  $("#reindexBtn").addEventListener("click", openReindexModal);
+  $("#closeReindexModalBtn").addEventListener("click", closeReindexModal);
+  $("#cancelReindexModalBtn").addEventListener("click", closeReindexModal);
+  $("#runReindexBtn").addEventListener("click", () => reindex(state.reindexMode));
+  document.querySelectorAll(".reindex-option").forEach((option) => {
+    option.addEventListener("click", () => selectReindexMode(option.dataset.reindexMode));
+  });
+  $("#reindexModal").addEventListener("click", (event) => {
+    if (event.target.id === "reindexModal") closeReindexModal();
+  });
+  selectReindexMode(state.reindexMode);
 }
 
 async function updateSource(event) {
@@ -678,35 +1111,309 @@ async function updateSource(event) {
   refreshIcons();
 }
 
+// ============ Auth ============
+
+function showAuthOverlay() {
+  $("#authOverlay").classList.add("active");
+  $("#authOverlay").setAttribute("aria-hidden", "false");
+}
+
+function hideAuthOverlay() {
+  $("#authOverlay").classList.remove("active");
+  $("#authOverlay").setAttribute("aria-hidden", "true");
+}
+
+function setAuthMode(mode) {
+  document.querySelectorAll(".auth-tab").forEach((t) => t.classList.toggle("active", t.dataset.authMode === mode));
+  $("#loginForm").classList.toggle("active", mode === "login");
+  $("#registerForm").classList.toggle("active", mode === "register");
+  $("#loginError").hidden = true;
+  $("#registerError").hidden = true;
+}
+
+function renderUserPanel() {
+  const user = state.currentUser;
+  const panel = $("#userPanel");
+  if (!user) {
+    panel.hidden = true;
+    document.body.classList.remove("role-admin", "role-user");
+    return;
+  }
+  panel.hidden = false;
+  $("#userEmail").textContent = user.display_name || user.email;
+  const roleEl = $("#userRole");
+  roleEl.textContent = user.role === "admin" ? "Администратор" : "Пользователь";
+  roleEl.classList.toggle("admin", user.role === "admin");
+  $("#userAvatar").textContent = (user.display_name || user.email).trim().charAt(0).toUpperCase();
+  document.body.classList.toggle("role-admin", user.role === "admin");
+  document.body.classList.toggle("role-user", user.role !== "admin");
+}
+
+async function loadCurrentUser() {
+  try {
+    const res = await fetch("/api/auth/me", { credentials: "same-origin" });
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (!data.authenticated) return null;
+    return data.user;
+  } catch (_) {
+    return null;
+  }
+}
+
+async function handleLogin(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const data = Object.fromEntries(new FormData(form).entries());
+  const errEl = $("#loginError");
+  errEl.hidden = true;
+  try {
+    const res = await fetch("/api/auth/login", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({}));
+      throw new Error(j.detail || "Ошибка входа.");
+    }
+    const user = await res.json();
+    state.currentUser = user;
+    renderUserPanel();
+    hideAuthOverlay();
+    await postLoginInit();
+  } catch (e) {
+    errEl.textContent = e.message;
+    errEl.hidden = false;
+  }
+}
+
+async function handleRegister(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const data = Object.fromEntries(new FormData(form).entries());
+  const errEl = $("#registerError");
+  errEl.hidden = true;
+  try {
+    const res = await fetch("/api/auth/register", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({}));
+      throw new Error(j.detail || "Ошибка регистрации.");
+    }
+    const user = await res.json();
+    state.currentUser = user;
+    renderUserPanel();
+    hideAuthOverlay();
+    await postLoginInit();
+  } catch (e) {
+    errEl.textContent = e.message;
+    errEl.hidden = false;
+  }
+}
+
+async function handleLogout() {
+  try {
+    await fetch("/api/auth/logout", { method: "POST", credentials: "same-origin" });
+  } catch (_) {}
+  state.currentUser = null;
+  state.currentSessionId = null;
+  state.isDraftChat = true;
+  state.attachedImages = [];
+  localStorage.removeItem("lastSessionId");
+  messagesEl.innerHTML = "";
+  sessionsListEl.innerHTML = "";
+  renderUserPanel();
+  showAuthOverlay();
+  setAuthMode("login");
+  document.querySelectorAll(".auth-form input").forEach((i) => (i.value = ""));
+}
+
+function bindAuth() {
+  document.querySelectorAll(".auth-tab").forEach((tab) => {
+    tab.addEventListener("click", () => setAuthMode(tab.dataset.authMode));
+  });
+  $("#loginForm").addEventListener("submit", handleLogin);
+  $("#registerForm").addEventListener("submit", handleRegister);
+  $("#logoutBtn").addEventListener("click", handleLogout);
+}
+
+// ============ Admin: invites & users ============
+
+async function loadInvites() {
+  const container = $("#invitesList");
+  try {
+    const invites = await api("/api/admin/invites");
+    if (!invites.length) {
+      container.innerHTML = '<div class="empty-hint">Нет активных кодов. Создайте новый.</div>';
+      return;
+    }
+    container.innerHTML = "";
+    invites.forEach((inv) => {
+      const card = document.createElement("div");
+      card.className = "invite-card";
+      const usedLabel = inv.max_uses ? `${inv.used_count}/${inv.max_uses}` : `${inv.used_count}/∞`;
+      const consumed = inv.max_uses > 0 && inv.used_count >= inv.max_uses;
+      card.innerHTML = `
+        <span class="invite-code" title="Кликни чтобы скопировать">${escapeHtml(inv.code)}</span>
+        <div class="invite-meta">
+          <span class="role-badge ${inv.role}">${inv.role === "admin" ? "Админ" : "User"}</span>
+          <strong>${usedLabel}</strong> исп.
+          ${consumed ? " · <em>исчерпан</em>" : ""}
+          ${inv.note ? ` · ${escapeHtml(inv.note)}` : ""}
+        </div>
+        <button type="button" class="invite-delete" aria-label="Удалить код">
+          <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="4" x2="12" y2="12"/><line x1="12" y1="4" x2="4" y2="12"/></svg>
+        </button>
+      `;
+      card.querySelector(".invite-code").addEventListener("click", () => {
+        navigator.clipboard?.writeText(inv.code);
+      });
+      card.querySelector(".invite-delete").addEventListener("click", async () => {
+        if (!confirm(`Удалить код ${inv.code}?`)) return;
+        await api(`/api/admin/invites/${inv.id}`, { method: "DELETE" });
+        loadInvites();
+      });
+      container.appendChild(card);
+    });
+  } catch (e) {
+    container.innerHTML = `<div class="empty-hint">Ошибка загрузки: ${escapeHtml(e.message)}</div>`;
+  }
+}
+
+async function loadAdminUsers() {
+  const container = $("#usersList");
+  try {
+    const users = await api("/api/admin/users");
+    container.innerHTML = "";
+    users.forEach((u) => {
+      const card = document.createElement("div");
+      card.className = "user-card";
+      const isSelf = state.currentUser && u.id === state.currentUser.id;
+      card.innerHTML = `
+        <div class="user-avatar">${escapeHtml((u.display_name || u.email).charAt(0).toUpperCase())}</div>
+        <div class="user-meta">
+          <div><strong>${escapeHtml(u.display_name || u.email)}</strong> ${isSelf ? "<small>(вы)</small>" : ""}</div>
+          <div style="font-size:12px;color:var(--muted);">${escapeHtml(u.email)} · <span class="role-badge ${u.role}">${u.role === "admin" ? "Админ" : "User"}</span></div>
+        </div>
+        ${isSelf ? "" : `<button type="button" class="user-delete" aria-label="Удалить пользователя">
+          <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="4" x2="12" y2="12"/><line x1="12" y1="4" x2="4" y2="12"/></svg>
+        </button>`}
+      `;
+      if (!isSelf) {
+        card.querySelector(".user-delete").addEventListener("click", async () => {
+          if (!confirm(`Удалить пользователя ${u.email}? Все его диалоги удалятся.`)) return;
+          await api(`/api/admin/users/${u.id}`, { method: "DELETE" });
+          loadAdminUsers();
+        });
+      }
+      container.appendChild(card);
+    });
+  } catch (e) {
+    container.innerHTML = `<div class="empty-hint">Ошибка: ${escapeHtml(e.message)}</div>`;
+  }
+}
+
+function openInviteModal() {
+  $("#inviteModal").classList.add("open");
+  $("#inviteModal").setAttribute("aria-hidden", "false");
+}
+
+function closeInviteModal() {
+  $("#inviteModal").classList.remove("open");
+  $("#inviteModal").setAttribute("aria-hidden", "true");
+  $("#inviteForm").reset();
+}
+
+async function handleCreateInvite(event) {
+  event.preventDefault();
+  const data = Object.fromEntries(new FormData(event.currentTarget).entries());
+  const payload = {
+    role: data.role || "user",
+    max_uses: parseInt(data.max_uses, 10) || 1,
+    note: (data.note || "").trim() || null,
+  };
+  await api("/api/admin/invites", { method: "POST", body: JSON.stringify(payload) });
+  closeInviteModal();
+  loadInvites();
+}
+
+function bindAdmin() {
+  $("#createInviteBtn").addEventListener("click", openInviteModal);
+  $("#closeInviteModalBtn").addEventListener("click", closeInviteModal);
+  $("#cancelInviteModalBtn").addEventListener("click", closeInviteModal);
+  $("#inviteForm").addEventListener("submit", handleCreateInvite);
+  $("#inviteModal").addEventListener("click", (e) => {
+    if (e.target.id === "inviteModal") closeInviteModal();
+  });
+}
+
+async function postLoginInit() {
+  // After successful login/register — load user-specific data and bootstrap the UI.
+  await loadHealth();
+  await loadSessions();
+  if (state.currentUser?.role === "admin") {
+    await loadMaterials();
+  }
+  await loadTools();
+  renderCourses();
+  const savedTab = localStorage.getItem("activeTab") || "chat";
+  const allowedTabs = state.currentUser?.role === "admin"
+    ? ["chat", "materials", "admin", "tools", "courses"]
+    : ["chat", "tools", "courses"];
+  if (savedTab === "chat") {
+    const lastSessionId = localStorage.getItem("lastSessionId");
+    const sessions = await api("/api/sessions");
+    const lastSession = sessions.find((session) => session.id === lastSessionId);
+    if (lastSession) {
+      await openSession(lastSession.id, stripImageNote(lastSession.title) || "Диалог");
+    } else {
+      startDraftChat();
+    }
+  } else {
+    renderEmptyState();
+    setActiveTab(allowedTabs.includes(savedTab) ? savedTab : "chat");
+  }
+  refreshIcons();
+}
+
 async function init() {
   bindTabs();
   bindAttachMenu();
   bindSourceModal();
+  bindReindexModal();
+  bindAuth();
+  bindAdmin();
   $("#chatForm").addEventListener("submit", sendMessage);
   $("#messageInput").addEventListener("input", (event) => resizeComposer(event.target));
   $("#messageInput").addEventListener("keydown", handleComposerKeydown);
-  rotateChatPlaceholder();
   $("#imageInput").addEventListener("change", uploadImage);
-  $("#reindexBtn").addEventListener("click", reindex);
+  bindImagePaste();
+  bindImageDrop();
+  bindLightbox();
   $("#refreshMaterialsBtn").addEventListener("click", refreshMaterials);
   $("#addSourceForm").addEventListener("submit", addSource);
   $("#editSourceForm").addEventListener("submit", updateSource);
   ["materialSearch", "statusFilter", "originFilter", "typeFilter", "sortMaterials"].forEach((id) => {
     $(`#${id}`).addEventListener("input", renderMaterials);
   });
-  await loadHealth();
-  await loadSessions();
-  await loadMaterials();
-  await loadTools();
-  renderCourses();
-  const savedTab = localStorage.getItem("activeTab") || "chat";
-  if (savedTab === "chat") {
-    startDraftChat();
-  } else {
-    renderEmptyState();
-    setActiveTab(["materials", "tools", "courses"].includes(savedTab) ? savedTab : "chat");
+
+  // Auth check
+  const user = await loadCurrentUser();
+  if (!user) {
+    showAuthOverlay();
+    setAuthMode("login");
+    refreshIcons();
+    return;
   }
-  refreshIcons();
+  state.currentUser = user;
+  renderUserPanel();
+  await postLoginInit();
 }
 
 init().catch((error) => {

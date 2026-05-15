@@ -6,4 +6,7 @@ __pycache__/
 data/chroma/
 data/raw/
 data/uploads/
+data/.jwt-secret
 logs/
+.claude/
+.DS_Store
