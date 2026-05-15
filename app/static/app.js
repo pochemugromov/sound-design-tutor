@@ -122,6 +122,9 @@ function extractImagePaths(text = "") {
 function imagePathToUrl(path) {
   if (!path) return null;
   const normalized = path.replace(/\\/g, "/");
+  if (normalized.startsWith("http://") || normalized.startsWith("https://")) {
+    return normalized;
+  }
   const idx = normalized.indexOf("uploads/");
   if (idx !== -1) return "/" + normalized.slice(idx);
   const name = normalized.split("/").pop();

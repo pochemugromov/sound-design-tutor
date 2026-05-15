@@ -209,6 +209,9 @@ def uploaded_image_url(path: str) -> str | None:
     if not path:
         return None
     normalized = path.strip().replace("\\", "/")
+    # Already a fully-qualified Blob (or any HTTP) URL — return as-is.
+    if normalized.startswith("http://") or normalized.startswith("https://"):
+        return normalized
     for prefix in ("data/uploads/", "uploads/"):
         if normalized.startswith(prefix):
             return "/" + normalized[normalized.index("uploads/") :]
@@ -693,17 +696,14 @@ async def chat(payload: ChatRequest, user: dict = Depends(get_current_user)):
     citations = source_citations(contexts)
     chat_store.add_message(session_id, "assistant", answer, citations)
 
-    generated_title = None
-    if is_first_message:
-        generated_title = await generate_session_title(message, bool(payload.image_paths))
-        if generated_title:
-            chat_store.update_session_title(session_id, generated_title)
-
+    # NOTE: AI title generation disabled to save Gemini API quota (rate-limit
+    # mitigation on free tier). Title is set automatically by chat_store.add_message
+    # from the first 80 chars of the user message (cleaned of image notes).
     return {
         "session_id": session_id,
         "answer": answer,
         "citations": citations,
-        "title": generated_title,
+        "title": None,
     }
 
 

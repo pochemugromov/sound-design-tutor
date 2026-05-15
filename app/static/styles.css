@@ -213,11 +213,12 @@ a {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 0 12px 18px;
+  padding: 12px 12px 18px;
   overflow-y: auto;
   flex: 1 1 auto;
   min-height: 0;
   align-content: flex-start;
+  border-top: 1px solid var(--line);
 }
 
 .session-item {
