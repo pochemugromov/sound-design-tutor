@@ -1374,7 +1374,21 @@ async function postLoginInit() {
     const sessions = await api("/api/sessions");
     const lastSession = sessions.find((session) => session.id === lastSessionId);
     if (lastSession) {
-      await openSession(lastSession.id, stripImageNote(lastSession.title) || "Диалог");
+      try {
+        await openSession(lastSession.id, stripImageNote(lastSession.title) || "Диалог");
+      } catch (err) {
+        console.warn("Failed to restore last session:", err);
+        localStorage.removeItem("lastSessionId");
+        startDraftChat();
+      }
+    } else if (sessions.length) {
+      // No matching id (maybe deleted or stale). Open most recent session instead.
+      const recent = sessions[0];
+      try {
+        await openSession(recent.id, stripImageNote(recent.title) || "Диалог");
+      } catch (_) {
+        startDraftChat();
+      }
     } else {
       startDraftChat();
     }
