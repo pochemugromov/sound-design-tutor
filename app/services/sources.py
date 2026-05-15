@@ -97,17 +97,23 @@ class SourceStore:
 
     def sync_metadata(self) -> None:
         now = utc_now()
-        manual_items = self.manual_sources()
-        manual_ids = [item["id"] for item in manual_items]
+        # Only sync manual sources from the local filesystem when we actually
+        # have files there. On serverless deploys (Vercel) the manual_dir is
+        # empty (files live in Neon/Blob), so we must NOT delete the manual
+        # rows synced from another machine.
+        has_local_manual = self.settings.manual_dir.exists() and any(self.settings.manual_dir.iterdir())
+        manual_items = self.manual_sources() if has_local_manual else []
         with self.db.connect() as conn:
-            if manual_ids:
-                placeholders = ",".join("?" for _ in manual_ids)
-                conn.execute(
-                    f"DELETE FROM sources WHERE origin = 'manual' AND id NOT IN ({placeholders})",
-                    manual_ids,
-                )
-            else:
-                conn.execute("DELETE FROM sources WHERE origin = 'manual'")
+            if has_local_manual:
+                manual_ids = [item["id"] for item in manual_items]
+                if manual_ids:
+                    placeholders = ",".join("?" for _ in manual_ids)
+                    conn.execute(
+                        f"DELETE FROM sources WHERE origin = 'manual' AND id NOT IN ({placeholders})",
+                        manual_ids,
+                    )
+                else:
+                    conn.execute("DELETE FROM sources WHERE origin = 'manual'")
             for item in self.configured_sources():
                 conn.execute(
                     """

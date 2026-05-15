@@ -319,7 +319,12 @@ class RagService:
             if target_source_ids is not None and source["id"] not in target_source_ids:
                 skipped += 1
                 continue
-            result = await self._process_web_source(source, collection)
+            try:
+                result = await self._process_web_source(source, collection)
+            except Exception as exc:
+                self.source_store.update_status(source["id"], "unavailable", 0, f"Ошибка индексации: {exc}")
+                unavailable += 1
+                continue
             prepared += result["prepared"]
             embedded += result["embedded"]
             unavailable += result["unavailable"]
@@ -330,7 +335,12 @@ class RagService:
             if target_source_ids is not None and source["id"] not in target_source_ids:
                 skipped += 1
                 continue
-            result = await self._process_manual_source(source, collection)
+            try:
+                result = await self._process_manual_source(source, collection)
+            except Exception as exc:
+                self.source_store.update_status(source["id"], "unavailable", 0, f"Ошибка индексации: {exc}")
+                unavailable += 1
+                continue
             prepared += result["prepared"]
             embedded += result["embedded"]
             unavailable += result["unavailable"]
@@ -594,26 +604,33 @@ class RagService:
 
     def _store_chunks(self, source: dict, chunks: list[str]) -> None:
         now = utc_now()
-        with self.source_store.db.connect() as conn:
-            for index, chunk in enumerate(chunks):
-                text = chunk_body(chunk)
-                conn.execute(
-                    """
-                    INSERT INTO source_chunks (id, source_id, title, url, chunk_index, page_number, text, search_text, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        f"{source['id']}:{index}",
-                        source["id"],
-                        source["title"],
-                        source["url"],
-                        index,
-                        chunk_page_number(chunk),
-                        text,
-                        normalize_for_search(text),
-                        now,
-                    ),
+        rows = []
+        for index, chunk in enumerate(chunks):
+            text = chunk_body(chunk)
+            rows.append(
+                (
+                    f"{source['id']}:{index}",
+                    source["id"],
+                    source["title"],
+                    source["url"],
+                    index,
+                    chunk_page_number(chunk),
+                    text,
+                    normalize_for_search(text),
+                    now,
                 )
+            )
+        if not rows:
+            return
+        with self.source_store.db.connect() as conn:
+            cur = conn.cursor()
+            cur.executemany(
+                """
+                INSERT INTO source_chunks (id, source_id, title, url, chunk_index, page_number, text, search_text, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                rows,
+            )
 
     async def _index_chunks(self, collection, source: dict, chunks: list[str]) -> None:
         ids = [f"{source['id']}:{index}" for index in range(len(chunks))]
@@ -625,12 +642,16 @@ class RagService:
 
         if self.vector_backend == "pgvector":
             # Embeddings are stored directly in source_chunks.embedding (matched by id).
+            update_rows = [
+                (self._to_vector_literal(embedding), chunk_id)
+                for chunk_id, embedding in zip(ids, embeddings)
+            ]
             with self.source_store.db.connect() as conn:
-                for chunk_id, embedding in zip(ids, embeddings):
-                    conn.execute(
-                        "UPDATE source_chunks SET embedding = ?::vector WHERE id = ?",
-                        (self._to_vector_literal(embedding), chunk_id),
-                    )
+                cur = conn.cursor()
+                cur.executemany(
+                    "UPDATE source_chunks SET embedding = ?::vector WHERE id = ?",
+                    update_rows,
+                )
             return
 
         metadatas = []
