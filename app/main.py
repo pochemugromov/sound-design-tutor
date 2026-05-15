@@ -743,13 +743,25 @@ async def update_material(source_id: str, payload: SourceUpdateRequest, admin: d
 
 @app.get("/api/manuals/{source_id}")
 async def open_manual(source_id: str, user: dict = Depends(get_current_user)):
+    from fastapi.responses import RedirectResponse
+
     source_store.sync_metadata()
     with db.connect() as conn:
         row = conn.execute(
-            "SELECT title, path FROM sources WHERE id = ? AND origin = 'manual'",
+            "SELECT title, path, blob_url FROM sources WHERE id = ? AND origin = 'manual'",
             (source_id,),
         ).fetchone()
-    if not row or not row["path"]:
+    if not row:
+        raise HTTPException(status_code=404, detail="Методичка не найдена.")
+
+    # Prefer Vercel Blob (persistent across deploys and accessible from prod).
+    # The browser automatically appends any #page=N fragment from the original
+    # URL to the redirect target.
+    blob_url = row["blob_url"] if "blob_url" in row.keys() else None
+    if blob_url:
+        return RedirectResponse(url=blob_url, status_code=302)
+
+    if not row["path"]:
         raise HTTPException(status_code=404, detail="Методичка не найдена.")
     path = Path(row["path"])
     if not path.exists() or not path.is_file() or path.suffix.lower() != ".pdf":

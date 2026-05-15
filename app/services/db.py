@@ -249,6 +249,9 @@ class Database:
             if "user_id" not in session_columns:
                 conn.execute("ALTER TABLE sessions ADD COLUMN user_id TEXT")
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id)")
+            sources_columns = {row["name"] for row in conn.execute("PRAGMA table_info(sources)").fetchall()}
+            if "blob_url" not in sources_columns:
+                conn.execute("ALTER TABLE sources ADD COLUMN blob_url TEXT")
 
     # ---------- Postgres schema ----------
 
@@ -288,6 +291,7 @@ class Database:
                     status TEXT NOT NULL,
                     origin TEXT NOT NULL,
                     path TEXT,
+                    blob_url TEXT,
                     chunks_count INTEGER NOT NULL DEFAULT 0,
                     note TEXT NOT NULL DEFAULT '',
                     updated_at TEXT NOT NULL
@@ -341,5 +345,6 @@ class Database:
                 "ALTER TABLE source_chunks ADD COLUMN IF NOT EXISTS page_number INTEGER",
                 "ALTER TABLE source_chunks ADD COLUMN IF NOT EXISTS embedding vector",
                 "ALTER TABLE sessions ADD COLUMN IF NOT EXISTS user_id TEXT",
+                "ALTER TABLE sources ADD COLUMN IF NOT EXISTS blob_url TEXT",
             ):
                 conn.executescript(sql + ";")
