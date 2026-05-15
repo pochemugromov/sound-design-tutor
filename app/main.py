@@ -52,7 +52,10 @@ telemetry = Telemetry(settings)
 llm = OpenAICompatibleClient(settings, telemetry)
 source_store = SourceStore(db, settings)
 rag = RagService(settings, llm, source_store)
-rag.restore_keyword_index_from_raw()
+try:
+    rag.restore_keyword_index_from_raw()
+except Exception as exc:
+    logger.warning("restore_keyword_index_from_raw failed at startup: %s", exc)
 
 EMPTY_RAG_WARNING = (
     "Пока не нашел достаточно релевантных материалов в базе знаний, чтобы ответить с опорой на источники.\n\n"

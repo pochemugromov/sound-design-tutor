@@ -20,15 +20,25 @@ def _env_bool(name: str, default: bool) -> bool:
 
 
 def _ensure_dev_jwt_secret() -> str:
-    secret_file = ROOT_DIR / "data" / ".jwt-secret"
-    if secret_file.exists():
-        existing = secret_file.read_text(encoding="utf-8").strip()
-        if existing:
-            return existing
+    is_vercel = os.getenv("VERCEL") == "1"
+    base = Path("/tmp/sound-design-tutor") if is_vercel else (ROOT_DIR / "data")
+    secret_file = base / ".jwt-secret"
+    try:
+        if secret_file.exists():
+            existing = secret_file.read_text(encoding="utf-8").strip()
+            if existing:
+                return existing
+    except OSError:
+        pass
     import secrets
     new_secret = secrets.token_urlsafe(48)
-    secret_file.parent.mkdir(parents=True, exist_ok=True)
-    secret_file.write_text(new_secret, encoding="utf-8")
+    try:
+        secret_file.parent.mkdir(parents=True, exist_ok=True)
+        secret_file.write_text(new_secret, encoding="utf-8")
+    except OSError:
+        # On serverless platforms with read-only FS, this is fine — caller will
+        # use the ephemeral secret. The user should set JWT_SECRET env var.
+        pass
     return new_secret
 
 
@@ -154,4 +164,11 @@ def ensure_directories(settings: Settings) -> None:
         settings.docs_dir,
         settings.database_path.parent,
     ):
-        path.mkdir(parents=True, exist_ok=True)
+        try:
+            path.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            # On serverless (Vercel) some paths are under read-only filesystem.
+            # The relevant writeable paths (under /tmp) will be created; others are
+            # safe to skip — they're either docs (not needed at runtime) or unused
+            # in cloud mode (Chroma replaced by pgvector).
+            pass
