@@ -232,9 +232,36 @@ def chunk_text(text: str, size: int = 1400, overlap: int = 220) -> list[str]:
     return [chunk for chunk in chunks if len(chunk) > 120]
 
 
+# Detects classic TOC line shapes:
+#   "Compressor.................234"
+#   "Compressor    234"
+#   "234"          (page-number-only lines, common in column TOCs)
+#   "Глава 5 ... 234"
+_TOC_LINE_RE = re.compile(
+    r"^(?:.+?\.{2,}\s*\d{1,5}|.+?\s+\d{1,5}|\d{1,5})\s*$"
+)
+
+
+def _is_table_of_contents_page(text: str) -> bool:
+    """Skip pages whose content looks like an index / table of contents.
+
+    These pages mention every keyword in the manual once, so vector and
+    keyword search prefer them over the real content page. Detection is a
+    structural heuristic: if more than ~40% of non-empty lines look like
+    TOC entries, treat the page as TOC.
+    """
+    lines = [line.strip() for line in text.split("\n") if line.strip()]
+    if len(lines) < 5:
+        return False
+    toc_lines = sum(1 for line in lines if _TOC_LINE_RE.match(line))
+    return toc_lines / len(lines) > 0.4
+
+
 def chunk_pages(page_texts: list[tuple[int, str]]) -> list[dict]:
     chunks = []
     for page_number, page_text in page_texts:
+        if _is_table_of_contents_page(page_text):
+            continue
         for chunk in chunk_text(page_text):
             chunks.append({"text": chunk, "page_number": page_number})
     return chunks

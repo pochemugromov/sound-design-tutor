@@ -114,7 +114,7 @@ def get_settings() -> Settings:
         if use_gemini_defaults
         else "https://api.openai.com/v1"
     )
-    default_chat_model = "gemini-3.1-flash-lite" if use_gemini_defaults else "gpt-4.1-mini"
+    default_chat_model = "gemini-2.5-flash" if use_gemini_defaults else "gpt-4.1-mini"
     default_embedding_model = "gemini-embedding-001" if use_gemini_defaults else "text-embedding-3-small"
 
     return Settings(
