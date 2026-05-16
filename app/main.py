@@ -696,14 +696,17 @@ async def chat(payload: ChatRequest, user: dict = Depends(get_current_user)):
     citations = source_citations(contexts)
     chat_store.add_message(session_id, "assistant", answer, citations)
 
-    # NOTE: AI title generation disabled to save Gemini API quota (rate-limit
-    # mitigation on free tier). Title is set automatically by chat_store.add_message
-    # from the first 80 chars of the user message (cleaned of image notes).
+    generated_title = None
+    if is_first_message:
+        generated_title = await generate_session_title(message, bool(payload.image_paths))
+        if generated_title:
+            chat_store.update_session_title(session_id, generated_title)
+
     return {
         "session_id": session_id,
         "answer": answer,
         "citations": citations,
-        "title": None,
+        "title": generated_title,
     }
 
 

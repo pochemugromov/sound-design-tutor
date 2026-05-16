@@ -356,7 +356,6 @@ class RagService:
             embedded += result["embedded"]
             unavailable += result["unavailable"]
             metadata_only += result["metadata_only"]
-            await asyncio.sleep(0.1)
 
         for source in self.source_store.manual_sources():
             if target_source_ids is not None and source["id"] not in target_source_ids:
@@ -663,7 +662,9 @@ class RagService:
         ids = [f"{source['id']}:{index}" for index in range(len(chunks))]
         texts = [chunk_body(chunk) for chunk in chunks]
         embeddings = []
-        batch_size = 32
+        # Tier 1+ keys allow much higher embedding throughput. Bigger batches
+        # mean fewer API round-trips → faster reindex.
+        batch_size = 100
         for start in range(0, len(texts), batch_size):
             embeddings.extend(await self.llm.embed(texts[start : start + batch_size]))
 
