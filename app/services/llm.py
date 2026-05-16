@@ -62,7 +62,7 @@ class OpenAICompatibleClient:
                 self._telemetry_update(observation, level="ERROR", status_message=str(exc)[:500])
                 raise
 
-    async def chat(self, messages: list[dict], max_tokens: int = 2048, continue_on_length: bool = True) -> str:
+    async def chat(self, messages: list[dict], max_tokens: int = 8192, continue_on_length: bool = True) -> str:
         with self._telemetry_observation(
             "llm.chat",
             as_type="generation",
@@ -75,8 +75,9 @@ class OpenAICompatibleClient:
                 answer_parts = []
                 finish_reasons = []
                 usage = {}
-                async with httpx.AsyncClient(timeout=120) as client:
-                    for attempt in range(2 if continue_on_length else 1):
+                max_attempts = 4 if continue_on_length else 1
+                async with httpx.AsyncClient(timeout=180) as client:
+                    for attempt in range(max_attempts):
                         payload = {
                             "model": self.settings.chat_model,
                             "messages": messages_for_request,
@@ -97,14 +98,19 @@ class OpenAICompatibleClient:
                         usage = data.get("usage") or usage
                         if answer_part:
                             answer_parts.append(answer_part)
-                        if finish_reason != "length" or attempt == 1:
+                        if finish_reason != "length" or attempt == max_attempts - 1:
                             break
                         messages_for_request.extend(
                             [
                                 {"role": "assistant", "content": answer_part},
                                 {
                                     "role": "user",
-                                    "content": "Продолжите ответ с места, где он был обрезан. Не повторяйте уже написанное.",
+                                    "content": (
+                                        "Продолжай ответ строго с того места, где он был обрезан. "
+                                        "Не повторяй уже написанное, не добавляй вступительных фраз, "
+                                        "не пиши никаких meta-комментариев (Correction, Continuation и т.п.) — "
+                                        "просто продолжай текст ответа."
+                                    ),
                                 },
                             ]
                         )
