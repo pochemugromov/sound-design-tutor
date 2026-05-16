@@ -62,11 +62,18 @@ class OpenAICompatibleClient:
                 self._telemetry_update(observation, level="ERROR", status_message=str(exc)[:500])
                 raise
 
-    async def chat(self, messages: list[dict], max_tokens: int = 32768, continue_on_length: bool = True) -> str:
+    async def chat(
+        self,
+        messages: list[dict],
+        max_tokens: int = 32768,
+        continue_on_length: bool = True,
+        model: str | None = None,
+    ) -> str:
+        active_model = (model or self.settings.chat_model).strip() or self.settings.chat_model
         with self._telemetry_observation(
             "llm.chat",
             as_type="generation",
-            model=self.settings.chat_model,
+            model=active_model,
             input={"messages": messages, "temperature": 0.2, "max_tokens": max_tokens},
             metadata={"provider": self._provider_name(), "endpoint": "chat/completions"},
         ) as observation:
@@ -79,7 +86,7 @@ class OpenAICompatibleClient:
                 async with httpx.AsyncClient(timeout=180) as client:
                     for attempt in range(max_attempts):
                         payload = {
-                            "model": self.settings.chat_model,
+                            "model": active_model,
                             "messages": messages_for_request,
                             "temperature": 0.2,
                             "max_tokens": max_tokens,

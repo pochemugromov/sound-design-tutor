@@ -192,6 +192,7 @@ async def generate_session_title(message: str, has_images: bool) -> str | None:
             messages,
             max_tokens=settings.title_generation_max_tokens,
             continue_on_length=False,
+            model=settings.title_model,
         )
     except Exception as exc:
         logger.warning("Session title generation failed: %s: %s", type(exc).__name__, exc)

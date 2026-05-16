@@ -57,6 +57,7 @@ class Settings:
     rag_max_keyword_chunks_per_source: int
     chat_history_window: int
     title_generation_max_tokens: int
+    title_model: str
     jwt_secret: str
     jwt_algorithm: str
     auth_cookie_name: str
@@ -131,6 +132,7 @@ def get_settings() -> Settings:
         rag_max_keyword_chunks_per_source=int(os.getenv("RAG_MAX_KEYWORD_CHUNKS_PER_SOURCE", "0")),
         chat_history_window=int(os.getenv("CHAT_HISTORY_WINDOW", "20")),
         title_generation_max_tokens=int(os.getenv("TITLE_GENERATION_MAX_TOKENS", "2000")),
+        title_model=os.getenv("TITLE_MODEL", "gemini-2.5-flash").strip() or "gemini-2.5-flash",
         jwt_secret=os.getenv("JWT_SECRET", "").strip() or _ensure_dev_jwt_secret(),
         jwt_algorithm=os.getenv("JWT_ALGORITHM", "HS256"),
         auth_cookie_name=os.getenv("AUTH_COOKIE_NAME", "sdt_auth"),
