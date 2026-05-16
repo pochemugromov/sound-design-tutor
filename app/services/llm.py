@@ -40,7 +40,7 @@ class OpenAICompatibleClient:
             metadata={"provider": self._provider_name()},
         ) as observation:
             try:
-                async with httpx.AsyncClient(timeout=60) as client:
+                async with httpx.AsyncClient(timeout=120) as client:
                     response = await client.post(
                         f"{self.settings.openai_base_url}/embeddings",
                         headers=self._headers(),
@@ -62,7 +62,7 @@ class OpenAICompatibleClient:
                 self._telemetry_update(observation, level="ERROR", status_message=str(exc)[:500])
                 raise
 
-    async def chat(self, messages: list[dict], max_tokens: int = 8192, continue_on_length: bool = True) -> str:
+    async def chat(self, messages: list[dict], max_tokens: int = 32768, continue_on_length: bool = True) -> str:
         with self._telemetry_observation(
             "llm.chat",
             as_type="generation",
